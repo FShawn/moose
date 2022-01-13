@@ -38,20 +38,20 @@ pcre_deps      := $(patsubst %.cc, %.$(obj-suffix).d, $(pcre_srcfiles)) \
 #
 # hit (new getpot parser)
 #
-HIT_DIR ?= $(MOOSE_DIR)/moosetools/contrib/hit
-ifeq ("$(wildcard $(HIT_DIR))", "")
-        HIT_DIR = $(MOOSE_DIR)/framework/contrib/hit
-endif
+HIT_DIR ?= $(MOOSE_DIR)/framework/contrib/hit
 $(info Using HIT from $(HIT_DIR))
 hit_CONTENT   := $(shell ls $(HIT_DIR) 2> /dev/null)
 ifeq ($(hit_CONTENT),)
-  $(error The HIT input file parser does not seem to be available. Make sure that either the moosetools submodule is checked out or that your HIT_DIR environment variable is set to the correct location of your HIT parser. To get the moosetools submodule, run the following from the root directory of MOOSE.\\n\\n    scripts/update_and_rebuild_hit.sh)
+  $(error The HIT input file parser does not seem to be available. If set, make sure the HIT_DIR environment variable is set to the correct location of your HIT parser.)
 endif
 hit_srcfiles  := $(HIT_DIR)/parse.cc $(HIT_DIR)/lex.cc $(HIT_DIR)/braceexpr.cc
 hit_objects   := $(patsubst %.cc, %.$(obj-suffix), $(hit_srcfiles))
 hit_LIB       := $(HIT_DIR)/libhit-$(METHOD).la
 # dependency files
 hit_deps      := $(patsubst %.cc, %.$(obj-suffix).d, $(hit_srcfiles))
+# hit command line tool
+hit_CLI_srcfiles := $(HIT_DIR)/main.cc
+hit_CLI          := $(HIT_DIR)/hit
 
 #
 # hit python bindings
@@ -88,19 +88,20 @@ else
 endif
 
 
-hit $(pyhit_LIB): $(pyhit_srcfiles)
+hit $(pyhit_LIB) $(hit_CLI): $(pyhit_srcfiles) $(hit_CLI_srcfiles)
 	@echo "Building and linking "$@"..."
 	@bash -c '(cd "$(HIT_DIR)" && $(libmesh_CXX) -std=c++11 -w -fPIC -lstdc++ -shared $^ $(pyhit_COMPILEFLAGS) $(DYNAMIC_LOOKUP) -o $(pyhit_LIB))'
+	@bash -c '(cd "$(HIT_DIR)" && $(MAKE))'
 
 #
 # gtest
 #
 gtest_DIR       := $(FRAMEWORK_DIR)/contrib/gtest
 gtest_srcfiles  := $(gtest_DIR)/gtest-all.cc
-gtest_objects   := $(patsubst %.cc, %.$(obj-suffix), $(gtest_srcfiles))
+gtest_objects   := $(patsubst %.cc, %.$(no-method-obj-suffix), $(gtest_srcfiles))
 gtest_LIB       := $(gtest_DIR)/libgtest.la
 # dependency files
-gtest_deps      := $(patsubst %.cc, %.$(obj-suffix).d, $(gtest_srcfiles))
+gtest_deps      := $(patsubst %.cc, %.$(no-method-obj-suffix).d, $(gtest_srcfiles))
 
 #
 # MooseConfigure
@@ -315,7 +316,7 @@ $(pcre_LIB): $(pcre_objects)
 $(gtest_LIB): $(gtest_objects)
 	@echo "Linking Library "$@"..."
 	@$(libmesh_LIBTOOL) --tag=CC $(LIBTOOLFLAGS) --mode=link --quiet \
-	  $(libmesh_CC) $(libmesh_CFLAGS) -o $@ $(gtest_objects) $(libmesh_LDFLAGS) $(libmesh_LIBS) $(EXTERNAL_FLAGS) -rpath $(gtest_DIR)
+	  $(libmesh_CC) -o $@ $(gtest_objects) $(EXTERNAL_FLAGS) -rpath $(gtest_DIR)
 	@$(libmesh_LIBTOOL) --mode=install --quiet install -c $(gtest_LIB) $(gtest_DIR)
 
 $(hit_LIB): $(hit_objects)
@@ -383,7 +384,7 @@ moose_share_dir = $(share_dir)/moose
 python_install_dir = $(moose_share_dir)/python
 bin_install_dir = $(PREFIX)/bin
 
-install: install_libs install_bin install_harness install_exodiff install_adreal_monolith
+install: install_libs install_bin install_harness install_exodiff install_adreal_monolith install_hit
 
 install_adreal_monolith: ADRealMonolithic.h
 	@ mkdir -p $(moose_include_dir)
@@ -406,6 +407,10 @@ install_harness:
 	@cp -f $(MOOSE_DIR)/framework/include/base/MooseConfig.h $(moose_include_dir)/
 	@cp -f $(HIT_DIR)/hit.so $(python_install_dir)/
 	@echo "libmesh_install_dir = '$(LIBMESH_DIR)'" > $(moose_share_dir)/moose_config.py
+
+install_hit: all
+	@echo "Installing HIT"
+	@cp $(MOOSE_DIR)/framework/contrib/hit/hit $(bin_install_dir)
 
 lib_install_suffix = lib/$(APPLICATION_NAME)
 lib_install_dir = $(PREFIX)/$(lib_install_suffix)
@@ -454,7 +459,6 @@ clean:
 # .) moose (ignore a possible MOOSE submodule)
 # .) .git  (don't accidentally delete any of git's metadata)
 # Notes:
-# .) Be careful: running 'make -n clobber' will actually delete files!
 # .) 'make clobber' does not respect $(METHOD), it just deletes
 #    everything it can find!
 # .) Running 'make clobberall' is a good way to clean up outdated
@@ -469,7 +473,7 @@ cleanall: clean
 	@echo "Cleaning in:"
 	@for dir in $(app_DIRS); do \
           echo \ $$dir; \
-          make -C $$dir clean ; \
+          $(MAKE) -C $$dir clean ; \
         done
 
 # clobberall runs 'make clobber' in all dependent application directories
@@ -477,7 +481,7 @@ clobberall: clobber
 	@echo "Clobbering in:"
 	@for dir in $(app_DIRS); do \
           echo \ $$dir; \
-          make -C $$dir clobber ; \
+          $(MAKE) -C $$dir clobber ; \
         done
 
 # clang_complete builds a clang configuration file for various clang-based autocompletion plugins

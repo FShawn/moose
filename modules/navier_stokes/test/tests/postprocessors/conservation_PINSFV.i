@@ -37,12 +37,7 @@ velocity_interp_method='average'
 []
 
 [Problem]
-  kernel_coverage_check = false
   fv_bcs_integrity_check = true
-[]
-
-[GlobalParams]
-  two_term_boundary_expansion = true
 []
 
 [Variables]
@@ -256,7 +251,7 @@ velocity_interp_method='average'
     rho = ${rho}
   []
   [advected_material_property]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'advected_rho cp'
     prop_values ='${rho} 1'
   []

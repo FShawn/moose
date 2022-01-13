@@ -21,6 +21,7 @@
 #include "libmesh/point.h"
 #include "libmesh/fe_base.h"
 #include "libmesh/numeric_vector.h"
+#include "libmesh/elem_side_builder.h"
 
 #include "DualRealOps.h"
 
@@ -479,23 +480,19 @@ public:
   const Node * const & nodeNeighbor() const { return _current_neighbor_node; }
 
   /**
-   * Creates volume, face and arbitrary qrules based on the orders passed in
-   * that apply to all subdomains. order is used for arbitrary volume
-   * quadrature rules, while volume_order and face_order are for elem and face
-   * quadrature respectively.
-   */
-  void createQRules(QuadratureType type, Order order, Order volume_order, Order face_order);
-
-  /**
    * Creates block-specific volume, face and arbitrary qrules based on the
-   * orders passed in.  Any quadrature rules specified using this function
-   * override those created via in the non-block-specific/global createQRules
-   * function. order is used for arbitrary volume quadrature rules, while
-   * volume_order and face_order are for elem and face quadrature
-   * respectively.
+   * orders and the flag of whether or not to allow negative qweights passed in.
+   * Any quadrature rules specified using this function override those created
+   * via in the non-block-specific/global createQRules function. order is used
+   * for arbitrary volume quadrature rules, while volume_order and face_order
+   * are for elem and face quadrature respectively.
    */
-  void createQRules(
-      QuadratureType type, Order order, Order volume_order, Order face_order, SubdomainID block);
+  void createQRules(QuadratureType type,
+                    Order order,
+                    Order volume_order,
+                    Order face_order,
+                    SubdomainID block,
+                    bool allow_negative_qweights = true);
 
   /**
    * Increases the element/volume quadrature order for the specified mesh
@@ -533,6 +530,26 @@ public:
    * @param dim The spatial dimension of the qrule
    */
   void setFaceQRule(QBase * qrule, unsigned int dim);
+
+  /**
+   * Specifies a custom qrule for integration on mortar segment mesh
+   *
+   * Used to properly integrate QUAD face elements using quadrature on TRI mortar segment elements.
+   * For example, to exactly integrate a FIRST order QUAD element, SECOND order quadrature on TRI
+   * mortar segments is needed.
+   */
+  void setMortarQRule(Order order);
+
+  /**
+   * Indicates that dual shape functions are used for mortar constraint
+   */
+  void activateDual() { _need_dual = true; }
+
+  /**
+   * Indicates whether dual shape functions are used (computation is now repeated on each element
+   * so expense of computing dual shape functions is no longer trivial)
+   */
+  bool needDual() const { return _need_dual; }
 
 private:
   /**
@@ -582,6 +599,11 @@ public:
                              const std::vector<Real> * const weights = nullptr);
 
   /**
+   * Reintialize dual basis coefficients based on a customized quadrature rule
+   */
+  void reinitDual(const Elem * elem, const std::vector<Point> & pts, const std::vector<Real> & JxW);
+
+  /**
    * Reinitialize FE data for a lower dimenesional element with a given set of reference points
    */
   void reinitLowerDElem(const Elem * elem,
@@ -612,7 +634,7 @@ private:
   /**
    * compute AD things on an element face
    */
-  void computeADFace(const Elem * elem, unsigned int side);
+  void computeADFace(const Elem & elem, const unsigned int side);
 
 public:
   /**
@@ -893,16 +915,6 @@ public:
                                 const DofMap & dof_map,
                                 const std::vector<dof_id_type> & idof_indices,
                                 const std::vector<dof_id_type> & jdof_indices);
-
-  /**
-   * Add *all* portions of the Jacobian, e.g. LowerLower, LowerSecondary, LowerPrimary,
-   * SecondaryLower, SecondarySecondary, SecondaryPrimary, PrimaryLower, PrimarySecondary,
-   * PrimaryPrimary for mortar-like objects. Primary indicates the interior parent element on the
-   * primary side of the mortar interface. Secondary indicates the interior parent element on the
-   * secondary side of the interface. Lower denotes the lower-dimensional element living on the
-   * secondary side of the mortar interface; it's the boundary face of the \p Secondary element.
-   */
-  void addJacobianMortar();
 
   /**
    * Add *all* portions of the Jacobian except PrimaryPrimary, e.g. LowerLower, LowerSecondary,
@@ -1725,7 +1737,7 @@ protected:
    */
   void reinitFEFace(const Elem * elem, unsigned int side);
 
-  void computeFaceMap(unsigned dim, const std::vector<Real> & qw, const Elem * side);
+  void computeFaceMap(const Elem & elem, const unsigned int side, const std::vector<Real> & qw);
 
   void reinitFEFaceNeighbor(const Elem * neighbor, const std::vector<Point> & reference_points);
 
@@ -2291,6 +2303,8 @@ private:
   QBase * _qrule_msm;
   /// A pointer to const qrule_msm
   const QBase * _const_qrule_msm;
+  /// Flag specifying whether a custom quadrature rule has been specified for mortar segment mesh
+  bool _custom_mortar_qrule;
 
 private:
   /// quadrature rule used on lower dimensional elements. This should always be the same as the face
@@ -2350,6 +2364,8 @@ protected:
   mutable bool _need_neighbor_lower_d_elem_volume;
   /// The current neighboring lower dimensional element volume
   Real _current_neighbor_lower_d_elem_volume;
+  /// Whether dual shape functions need to be computed for mortar constraints
+  bool _need_dual;
 
   /// This will be filled up with the physical points passed into reinitAtPhysical() if it is called.  Invalid at all other times.
   MooseArray<Point> _current_physical_points;
@@ -2570,6 +2586,13 @@ protected:
   /// The map from global index to variable scaling factor
   const NumericVector<Real> * _scaling_vector = nullptr;
 #endif
+
+  /// In place side element builder for _current_side_elem
+  ElemSideBuilder _current_side_elem_builder;
+  /// In place side element builder for _current_neighbor_side_elem
+  ElemSideBuilder _current_neighbor_side_elem_builder;
+  /// In place side element builder for computeFaceMap()
+  ElemSideBuilder _compute_face_map_side_elem_builder;
 };
 
 template <typename OutputType>

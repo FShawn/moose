@@ -87,21 +87,17 @@
 
 [Materials]
   [left]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff_left'
     prop_values = '1'
     block = 0
   []
   [right]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff_right'
     prop_values = '1'
     block = 1
   []
-[]
-
-[Problem]
-  kernel_coverage_check = off
 []
 
 [Executioner]

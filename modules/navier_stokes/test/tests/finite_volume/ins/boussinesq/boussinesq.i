@@ -10,10 +10,6 @@ rayleigh=1e3
 hot_temp=${rayleigh}
 temp_ref=${fparse hot_temp / 2.}
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   [gen]
     type = GeneratedMeshGenerator
@@ -144,7 +140,7 @@ temp_ref=${fparse hot_temp / 2.}
   [u_buoyancy]
     type = INSFVMomentumBoussinesq
     variable = u
-    temperature = T
+    T_fluid = T
     gravity = '0 -1 0'
     rho = ${rho}
     ref_temperature = ${temp_ref}
@@ -185,7 +181,7 @@ temp_ref=${fparse hot_temp / 2.}
   [v_buoyancy]
     type = INSFVMomentumBoussinesq
     variable = v
-    temperature = T
+    T_fluid = T
     gravity = '0 -1 0'
     rho = ${rho}
     ref_temperature = ${temp_ref}
@@ -256,10 +252,10 @@ temp_ref=${fparse hot_temp / 2.}
 []
 
 [Materials]
-  [const]
-    type = ADGenericConstantMaterial
-    prop_names = 'k cp alpha'
-    prop_values = '${k} ${cp} ${alpha}'
+  [const_functor]
+    type = ADGenericFunctorMaterial
+    prop_names = 'alpha_b cp k'
+    prop_values = '${alpha} ${cp} ${k}'
   []
   [ins_fv]
     type = INSFVMaterial

@@ -3,10 +3,6 @@ rho=1
 advected_interp_method='average'
 velocity_interp_method='rc'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   file = diverging.msh
   uniform_refine = 2
@@ -182,6 +178,7 @@ velocity_interp_method='rc'
   petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -ksp_gmres_restart'
   petsc_options_value = 'asm      lu           NONZERO                   200'
   line_search = 'none'
+  nl_rel_tol = 1e-12
 []
 
 [Debug]

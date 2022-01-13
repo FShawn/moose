@@ -5,10 +5,6 @@ velocity_interp_method='rc'
 
 restricted_blocks = '1'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   parallel_type = 'replicated'
   [mesh]
@@ -261,7 +257,7 @@ restricted_blocks = '1'
     block = ${restricted_blocks}
   []
   [const]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'cp'
     prop_values = '2'
   []

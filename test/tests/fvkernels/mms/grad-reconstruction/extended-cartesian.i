@@ -14,10 +14,6 @@ diff=1.1
   [../]
 []
 
-[Problem]
-  kernel_coverage_check = off
-[]
-
 [Variables]
   [./v]
     family = MONOMIAL
@@ -25,7 +21,7 @@ diff=1.1
     fv = true
     initial_condition = 1
     type = MooseVariableFVReal
-    use_extended_stencil = true
+    face_interp_method = 'vertex-based'
   [../]
 []
 

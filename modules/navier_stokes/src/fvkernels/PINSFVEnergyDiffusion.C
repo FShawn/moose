@@ -9,6 +9,7 @@
 
 #include "PINSFVEnergyDiffusion.h"
 #include "INSFVEnergyVariable.h"
+#include "NS.h"
 
 registerMooseObject("NavierStokesApp", PINSFVEnergyDiffusion);
 
@@ -18,18 +19,23 @@ PINSFVEnergyDiffusion::validParams()
   auto params = FVFluxKernel::validParams();
   params.addClassDescription("Diffusion term in the porous media incompressible Navier-Stokes "
                              "fluid energy equations :  $-div(eps * k * grad(T))$");
-  params.addRequiredCoupledVar("porosity", "Porosity variable");
-  params.addRequiredParam<MaterialPropertyName>("k", "Thermal conductivity");
+  params.addRequiredParam<MooseFunctorName>(NS::porosity, "Porosity");
+  params.addRequiredParam<MooseFunctorName>(NS::k, "Thermal conductivity");
+  params.addParam<bool>(
+      "effective_diffusivity",
+      false,
+      "Whether the diffusivity should be multiplied by porosity, or whether the provided "
+      "diffusivity is an effective diffusivity taking porosity effects into account");
+
   params.set<unsigned short>("ghost_layers") = 2;
   return params;
 }
 
 PINSFVEnergyDiffusion::PINSFVEnergyDiffusion(const InputParameters & params)
   : FVFluxKernel(params),
-    _k_elem(getADMaterialProperty<Real>("k")),
-    _k_neighbor(getNeighborADMaterialProperty<Real>("k")),
-    _eps(coupledValue("porosity")),
-    _eps_neighbor(coupledNeighborValue("porosity"))
+    _k(getFunctor<ADReal>(NS::k)),
+    _eps(getFunctor<ADReal>(NS::porosity)),
+    _porosity_factored_in(getParam<bool>("effective_diffusivity"))
 {
 #ifndef MOOSE_GLOBAL_AD_INDEXING
   mooseError("PINSFV is not supported by local AD indexing. In order to use PINSFV, please run "
@@ -46,12 +52,23 @@ PINSFVEnergyDiffusion::computeQpResidual()
 {
   // Interpolate thermal conductivity times porosity on the face
   ADReal k_eps_face;
-  interpolate(Moose::FV::InterpMethod::Average,
-              k_eps_face,
-              _k_elem[_qp] * _eps[_qp],
-              _k_neighbor[_qp] * _eps_neighbor[_qp],
-              *_face_info,
-              true);
+  const auto face_elem = elemFromFace();
+  const auto face_neighbor = neighborFromFace();
+
+  if (!_porosity_factored_in)
+    Moose::FV::interpolate(Moose::FV::InterpMethod::Average,
+                           k_eps_face,
+                           _k(face_elem) * _eps(face_elem),
+                           _k(face_neighbor) * _eps(face_neighbor),
+                           *_face_info,
+                           true);
+  else
+    Moose::FV::interpolate(Moose::FV::InterpMethod::Average,
+                           k_eps_face,
+                           _k(face_elem),
+                           _k(face_neighbor),
+                           *_face_info,
+                           true);
 
   // Compute the temperature gradient dotted with the surface normal
   auto dTdn = gradUDotNormal();

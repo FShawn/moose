@@ -8,12 +8,14 @@
 #* https://www.gnu.org/licenses/lgpl-2.1.html
 
 import collections
-
+import logging
 import moosetree
 from ..base import components, renderers
 from ..common import exceptions
 from ..tree import pages, tokens, html, latex
 from . import command, table, floats
+
+LOG = logging.getLogger(__name__)
 
 def make_extension(**kwargs):
     return AcronymExtension(**kwargs)
@@ -75,10 +77,6 @@ class AcronymExtension(command.CommandExtension):
                 self.__used.add(key)
             acro = AcronymItem(key=key, name=acro, used=used)
 
-        else:
-            msg = "The acronym '{}' was not found."
-            raise exceptions.MooseDocsException(msg, key)
-
         return acro
 
     def getAcronyms(self, page, complete=False):
@@ -104,7 +102,7 @@ class AcronymComponent(command.CommandComponent):
     COMMAND = 'ac'
     SUBCOMMAND = None
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         AcronymToken(parent, acronym=info['inline'])
         return parent
 
@@ -123,19 +121,19 @@ class AcronymListComponent(command.CommandComponent):
         settings['caption'] = (None, "The caption to use for the acronym table.")
         return settings
 
-    def createToken(self, parent, info, page):
-        if self.settings['location'] and self.settings['complete']:
+    def createToken(self, parent, info, page, settings):
+        if settings['location'] and settings['complete']:
             msg = "The 'complete' setting must be 'False' (default) when using 'location'."
             raise exceptions.MooseDocsException(msg)
 
-        flt = floats.create_float(parent, self.extension, self.reader, page, self.settings,
-                                  **self.attributes)
+        flt = floats.create_float(parent, self.extension, self.reader, page, settings,
+                                  **self.attributes(settings))
         acro = AcronymListToken(flt,
-                                complete=self.settings['complete'],
-                                location=self.settings['location'],
-                                heading=self.settings['heading'])
+                                complete=settings['complete'],
+                                location=settings['location'],
+                                heading=settings['heading'])
         if flt is parent:
-            acro.attributes.update(**self.attributes)
+            acro.attributes.update(**self.attributes(settings))
 
         return parent
 
@@ -143,15 +141,22 @@ class RenderAcronymToken(components.RenderComponent):
 
     def _createSpan(self, parent, token, page):
         acro = self.extension.getAcronym(token['acronym'])
-        content = str(acro.key) if acro.used else '{} ({})'.format(acro.name, acro.key)
-        return html.Tag(parent, 'span', string=content), acro
+        if acro is None:
+            tag = html.Tag(parent, 'span', string=token['acronym'], class_='moose-error')
+            raise exceptions.MooseDocsException("The acronym '{}' was not found.", token['acronym'])
+
+        else:
+            content = str(acro.key) if acro.used else '{} ({})'.format(acro.name, acro.key)
+            tag = html.Tag(parent, 'span', string=content)
+
+        return tag, acro
 
     def createHTML(self, parent, token, page):
         self._createSpan(parent, token, page)
 
     def createMaterialize(self, parent, token, page):
         span, acro = self._createSpan(parent, token, page)
-        if acro.used:
+        if (acro is not None) and acro.used:
             span.addClass('tooltipped')
             span['data-tooltip'] = acro.name
             span['data-position'] = 'top'

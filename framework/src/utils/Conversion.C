@@ -84,6 +84,7 @@ initEigenSolveType()
     eigen_solve_type_to_enum["NONLINEAR_POWER"] = EST_NONLINEAR_POWER;
     eigen_solve_type_to_enum["NEWTON"] = EST_NEWTON;
     eigen_solve_type_to_enum["PJFNK"] = EST_PJFNK;
+    eigen_solve_type_to_enum["PJFNKMO"] = EST_PJFNKMO;
     eigen_solve_type_to_enum["JFNK"] = EST_JFNK;
   }
 }
@@ -131,18 +132,12 @@ initLineSearchType()
     line_search_type_to_enum["NONE"] = LS_NONE;
     line_search_type_to_enum["BASIC"] = LS_BASIC;
 
-#if PETSC_VERSION_LESS_THAN(3, 3, 0)
-    line_search_type_to_enum["CUBIC"] = LS_CUBIC;
-    line_search_type_to_enum["QUADRATIC"] = LS_QUADRATIC;
-    line_search_type_to_enum["BASICNONORMS"] = LS_BASICNONORMS;
-#else
     line_search_type_to_enum["SHELL"] = LS_SHELL;
     line_search_type_to_enum["L2"] = LS_L2;
     line_search_type_to_enum["BT"] = LS_BT;
     line_search_type_to_enum["CP"] = LS_CP;
     line_search_type_to_enum["CONTACT"] = LS_CONTACT;
     line_search_type_to_enum["PROJECT"] = LS_PROJECT;
-#endif
   }
 }
 
@@ -442,6 +437,33 @@ stringify(const SolveType & t)
       return "FD";
     case ST_LINEAR:
       return "Linear";
+  }
+  return "";
+}
+
+std::string
+stringify(const EigenSolveType & t)
+{
+  switch (t)
+  {
+    case EST_POWER:
+      return "Power";
+    case EST_ARNOLDI:
+      return "ARNOLDI";
+    case EST_KRYLOVSCHUR:
+      return "KRYLOVSCHUR";
+    case EST_JACOBI_DAVIDSON:
+      return "Jacobi Davidson";
+    case EST_NONLINEAR_POWER:
+      return "Nonlinear Power";
+    case EST_PJFNKMO:
+      return "PJFNK with Matrix Only";
+    case EST_NEWTON:
+      return "Newton";
+    case EST_JFNK:
+      return "JFNK";
+    case EST_PJFNK:
+      return "Preconditioned JFNK";
   }
   return "";
 }

@@ -1,6 +1,6 @@
 [Tests]
   design = 'LayeredIntegral.md'
-  issues = '#1289 #16099'
+  issues = '#1289 #16099 #19220 #19480'
 
   [group]
     requirement = 'The system shall include the ability to computes volume integrals of a variable '
@@ -13,11 +13,26 @@
       detail = 'using 3 layers with'
     []
 
+    [unique_points]
+      type = 'CSVDiff'
+      input = 'layered_integral_test.i'
+      csvdiff = 'out_int_0001.csv'
+      detail = 'automatic specification of points to output unique values and'
+    []
+
     [cumulative]
       type = 'Exodiff'
       input = 'cumulative_layered_integral.i'
       exodiff = 'cumulative_layered_integral_out.e'
       detail = 'as a cumulative calculation and'
+    []
+
+    [cumulative_negative]
+      type = 'Exodiff'
+      input = 'cumulative_layered_integral.i'
+      exodiff = 'cumulative_layered_integral_reverse.e'
+      cli_args = 'Outputs/file_base=cumulative_layered_integral_reverse UserObjects/layered_integral/positive_cumulative_direction=false'
+      detail = 'as a cumulative calculation in the negative direction and'
     []
 
     [average_sample]

@@ -105,8 +105,4 @@
 
 [Outputs]
   exodus = true
-  [dofmap]
-    type = DOFMap
-    execute_on = 'initial'
-  []
 []

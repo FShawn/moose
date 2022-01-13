@@ -13,43 +13,10 @@
 #include "ElementIntegralVariableUserObject.h"
 #include "Enumerate.h"
 #include "DelimitedFileReader.h"
+#include "LayeredBase.h"
 
 // Forward Declarations
 class UserObject;
-
-/**
- * Because this is a templated base class and template partial
- * specializations are not allowed... this class instead defines
- * a new templated function that is templated on the type of
- * UserObject that will be at each nearest point.
- *
- * If you inherit from this class... then call this function
- * to start your parameters for the new class
- */
-template <typename UserObjectType, typename BaseType>
-InputParameters
-nearestPointBaseValidParams()
-{
-  InputParameters params = validParams<BaseType>();
-
-  params.addParam<std::vector<Point>>("points",
-                                      "Computations will be lumped into values at these points.");
-  params.addParam<FileName>("points_file",
-                            "A filename that should be looked in for points. Each "
-                            "set of 3 values in that file will represent a Point.  "
-                            "This and 'points' cannot be both supplied.");
-
-  MooseEnum distnorm("point=0 radius=1", "point");
-  params.addParam<MooseEnum>(
-      "dist_norm", distnorm, "To specify whether the distance is defined based on point or radius");
-  MooseEnum axis("x=0 y=1 z=2", "z");
-  params.addParam<MooseEnum>("axis", axis, "The axis around which the radius is determined");
-
-  // Add in the valid parameters
-  params += validParams<UserObjectType>();
-
-  return params;
-}
 
 /**
  * This UserObject computes averages of a variable storing partial
@@ -80,6 +47,14 @@ public:
    * @param p The point to look for in the layers.
    */
   virtual Real spatialValue(const Point & p) const override;
+
+  /**
+   * Get the points at which the nearest operation is performed
+   * @return points
+   */
+  virtual const std::vector<Point> & getPoints() const { return _points; }
+
+  virtual const std::vector<Point> spatialPoints() const override;
 
 protected:
   /**
@@ -113,6 +88,31 @@ protected:
   using BaseType::name;
   using BaseType::processor_id;
 };
+
+template <typename UserObjectType, typename BaseType>
+InputParameters
+NearestPointBase<UserObjectType, BaseType>::validParams()
+{
+  InputParameters params = BaseType::validParams();
+
+  params.addParam<std::vector<Point>>("points",
+                                      "Computations will be lumped into values at these points.");
+  params.addParam<FileName>("points_file",
+                            "A filename that should be looked in for points. Each "
+                            "set of 3 values in that file will represent a Point.  "
+                            "This and 'points' cannot be both supplied.");
+
+  MooseEnum distnorm("point=0 radius=1", "point");
+  params.addParam<MooseEnum>(
+      "dist_norm", distnorm, "To specify whether the distance is defined based on point or radius");
+  MooseEnum axis("x=0 y=1 z=2", "z");
+  params.addParam<MooseEnum>("axis", axis, "The axis around which the radius is determined");
+
+  // Add in the valid parameters
+  params += UserObjectType::validParams();
+
+  return params;
+}
 
 template <typename UserObjectType, typename BaseType>
 NearestPointBase<UserObjectType, BaseType>::NearestPointBase(const InputParameters & parameters)
@@ -251,4 +251,39 @@ NearestPointBase<UserObjectType, BaseType>::nearestUserObject(const Point & p) c
   }
 
   return _user_objects[closest];
+}
+
+template <typename UserObjectType, typename BaseType>
+const std::vector<Point>
+NearestPointBase<UserObjectType, BaseType>::spatialPoints() const
+{
+  std::vector<Point> points;
+
+  for (MooseIndex(_points) i = 0; i < _points.size(); ++i)
+  {
+    std::shared_ptr<LayeredBase> layered_base =
+        std::dynamic_pointer_cast<LayeredBase>(_user_objects[i]);
+    if (layered_base)
+    {
+      const auto & layers = layered_base->getLayerCenters();
+      auto direction = layered_base->direction();
+
+      for (const auto & l : layers)
+      {
+        Point pt = _points[i];
+        pt(direction) = l;
+        points.push_back(pt);
+      }
+    }
+  }
+
+  return points;
+}
+
+// Deprecated method that will be removed in #19440
+template <typename UserObjectType, typename BaseType>
+InputParameters
+nearestPointBaseValidParams()
+{
+  return NearestPointBase<UserObjectType, BaseType>::validParams();
 }

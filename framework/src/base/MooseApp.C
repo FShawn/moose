@@ -21,6 +21,7 @@
 #include "MooseSyntax.h"
 #include "MooseInit.h"
 #include "Executioner.h"
+#include "Executor.h"
 #include "PetscSupport.h"
 #include "Conversion.h"
 #include "CommandLine.h"
@@ -47,6 +48,8 @@
 #include "Attributes.h"
 #include "MooseApp.h"
 #include "CommonOutputAction.h"
+#include "CastUniquePointer.h"
+#include "NullExecutor.h"
 
 // Regular expression includes
 #include "pcrecpp.h"
@@ -124,6 +127,8 @@ MooseApp::validParams()
       "registry", "--registry", "Lists all known objects and actions.");
   params.addCommandLineParam<bool>(
       "registry_hit", "--registry-hit", "Lists all known objects and actions in hit format.");
+  params.addCommandLineParam<bool>(
+      "use_executor", "--executor", false, "Use the new Executor system instead of Executioners");
 
   params.addCommandLineParam<bool>(
       "apptype", "--type", false, "Return the name of the application object.");
@@ -303,7 +308,7 @@ MooseApp::validParams()
 
 MooseApp::MooseApp(InputParameters parameters)
   : ConsoleStreamInterface(*this),
-    PerfGraphInterface(_perf_graph, "MooseApp"),
+    PerfGraphInterface(*this, "MooseApp"),
     ParallelObject(*parameters.get<std::shared_ptr<Parallel::Communicator>>(
         "_comm")), // Can't call getParam() before pars is set
     _name(parameters.get<std::string>("_app_name")),
@@ -316,15 +321,15 @@ MooseApp::MooseApp(InputParameters parameters)
     _start_time(0.0),
     _global_time_offset(0.0),
     _output_warehouse(*this),
-    _perf_graph(type() + " (" + name() + ')',
-                *this,
-                getParam<bool>("perf_graph_live_all"),
-                !getParam<bool>("disable_perf_graph_live")),
+    _restartable_data(libMesh::n_threads()),
+    _perf_graph(createRecoverablePerfGraph()),
     _rank_map(*_comm, _perf_graph),
     _input_parameter_warehouse(new InputParameterWarehouse()),
     _action_factory(*this),
     _action_warehouse(*this, _syntax, _action_factory),
     _parser(*this, _action_warehouse),
+    _use_executor(parameters.get<bool>("use_executor")),
+    _null_executor(NULL),
     _use_nonlinear(true),
     _use_eigen_value(false),
     _enable_unused_check(WARN_UNUSED),
@@ -345,7 +350,6 @@ MooseApp::MooseApp(InputParameters parameters)
     _restart_recover_suffix("cpr"),
     _half_transient(false),
     _check_input(getParam<bool>("check_input")),
-    _restartable_data(libMesh::n_threads()),
     _multiapp_level(
         isParamValid("_multiapp_level") ? parameters.get<unsigned int>("_multiapp_level") : 0),
     _multiapp_number(
@@ -442,7 +446,7 @@ MooseApp::MooseApp(InputParameters parameters)
   Registry::addKnownLabel(_type);
   Moose::registerAll(_factory, _action_factory, _syntax);
 
-  _the_warehouse = libmesh_make_unique<TheWarehouse>();
+  _the_warehouse = std::make_unique<TheWarehouse>();
   _the_warehouse->registerAttribute<AttribMatrixTags>("matrix_tags", 0);
   _the_warehouse->registerAttribute<AttribVectorTags>("vector_tags", 0);
   _the_warehouse->registerAttribute<AttribExecOns>("exec_ons", 0);
@@ -463,7 +467,7 @@ MooseApp::MooseApp(InputParameters parameters)
     int argc = getParam<int>("_argc");
     char ** argv = getParam<char **>("_argv");
 
-    _sys_info = libmesh_make_unique<SystemInfo>(argc, argv);
+    _sys_info = std::make_unique<SystemInfo>(argc, argv);
   }
   if (isParamValid("_command_line"))
     _command_line = getParam<std::shared_ptr<CommandLine>>("_command_line");
@@ -1038,7 +1042,7 @@ MooseApp::errorCheck()
 
   _parser.errorCheck(*_comm, warn, err);
 
-  auto apps = _executioner->feProblem().getMultiAppWarehouse().getObjects();
+  auto apps = feProblem().getMultiAppWarehouse().getObjects();
   for (auto app : apps)
     for (unsigned int i = 0; i < app->numLocalApps(); i++)
       app->localApp(i)->errorCheck();
@@ -1054,10 +1058,19 @@ MooseApp::executeExecutioner()
     return;
 
   // run the simulation
-  if (_executioner)
+  if (_use_executor && _executor)
   {
     Moose::PetscSupport::petscSetupOutput(_command_line.get());
 
+    _executor->init();
+    errorCheck();
+    auto result = _executor->exec();
+    if (!result.convergedAll())
+      mooseError(result.str());
+  }
+  else if (_executioner)
+  {
+    Moose::PetscSupport::petscSetupOutput(_command_line.get());
     _executioner->init();
     errorCheck();
     _executioner->execute();
@@ -1123,7 +1136,7 @@ std::shared_ptr<Backup>
 MooseApp::backup()
 {
   mooseAssert(_executioner, "Executioner is nullptr");
-  FEProblemBase & fe_problem = _executioner->feProblem();
+  FEProblemBase & fe_problem = feProblem();
 
   RestartableDataIO rdio(fe_problem);
   return rdio.createBackup();
@@ -1135,7 +1148,7 @@ MooseApp::restore(std::shared_ptr<Backup> backup, bool for_restart)
   TIME_SECTION("restore", 2, "Restoring Application");
 
   mooseAssert(_executioner, "Executioner is nullptr");
-  FEProblemBase & fe_problem = _executioner->feProblem();
+  FEProblemBase & fe_problem = feProblem();
 
   RestartableDataIO rdio(fe_problem);
   rdio.restoreBackup(backup, for_restart);
@@ -1160,6 +1173,162 @@ void
 MooseApp::disableCheckUnusedFlag()
 {
   _enable_unused_check = OFF;
+}
+
+FEProblemBase &
+MooseApp::feProblem() const
+{
+  return _executor.get() ? _executor->feProblem() : _executioner->feProblem();
+}
+
+void
+MooseApp::addExecutor(const std::string & type,
+                      const std::string & name,
+                      const InputParameters & params)
+{
+  std::shared_ptr<Executor> executor = _factory.create<Executor>(type, name, params);
+
+  if (_executors.count(executor->name()) > 0)
+    mooseError("an executor with name '", executor->name(), "' already exists");
+  _executors[executor->name()] = executor;
+}
+
+void
+MooseApp::addExecutorParams(const std::string & type,
+                            const std::string & name,
+                            const InputParameters & params)
+{
+  _executor_params[name] = std::make_pair(type, libmesh_make_unique<InputParameters>(params));
+}
+
+void
+MooseApp::recursivelyCreateExecutors(const std::string & current_executor_name,
+                                     std::list<std::string> & possible_roots,
+                                     std::list<std::string> & current_branch)
+{
+  // Did we already make this one?
+  if (_executors.find(current_executor_name) != _executors.end())
+    return;
+
+  // Is this one already on the current branch (i.e. there is a cycle)
+  if (std::find(current_branch.begin(), current_branch.end(), current_executor_name) !=
+      current_branch.end())
+  {
+    std::stringstream exec_names_string;
+
+    auto branch_it = current_branch.begin();
+
+    exec_names_string << *branch_it++;
+
+    for (; branch_it != current_branch.end(); ++branch_it)
+      exec_names_string << ", " << *branch_it;
+
+    exec_names_string << ", " << current_executor_name;
+
+    mooseError("Executor cycle detected: ", exec_names_string.str());
+  }
+
+  current_branch.push_back(current_executor_name);
+
+  // Build the dependencies first
+  const auto & params = *_executor_params[current_executor_name].second;
+
+  for (const auto & param : params)
+  {
+    if (dynamic_cast<InputParameters::Parameter<ExecutorName> *>(param.second))
+    {
+      const auto & dependency_name =
+          static_cast<InputParameters::Parameter<ExecutorName> *>(param.second)->get();
+
+      possible_roots.remove(dependency_name);
+
+      if (!dependency_name.empty())
+        recursivelyCreateExecutors(dependency_name, possible_roots, current_branch);
+    }
+  }
+
+  // Add this Executor
+  const auto & type = _executor_params[current_executor_name].first;
+  addExecutor(type, current_executor_name, params);
+
+  current_branch.pop_back();
+}
+
+void
+MooseApp::createExecutors()
+{
+  // Do we have any?
+  if (_executor_params.empty())
+    return;
+
+  // Holds the names of Executors that may be the root executor
+  std::list<std::string> possibly_root;
+
+  // What is already built
+  std::map<std::string, bool> already_built;
+
+  // The Executors that are currently candidates for being roots
+  std::list<std::string> possible_roots;
+
+  // The current line of dependencies - used for finding cycles
+  std::list<std::string> current_branch;
+
+  // Build the NullExecutor
+  {
+    auto params = _factory.getValidParams("NullExecutor");
+    _null_executor = _factory.create<NullExecutor>("NullExecutor", "_null_executor", params);
+  }
+
+  for (const auto & params_entry : _executor_params)
+  {
+    const auto & name = params_entry.first;
+
+    // Did we already make this one?
+    if (_executors.find(name) != _executors.end())
+      continue;
+
+    possible_roots.emplace_back(name);
+
+    recursivelyCreateExecutors(name, possible_roots, current_branch);
+  }
+
+  // If there is more than one possible root - error
+  if (possible_roots.size() > 1)
+  {
+    auto root_string_it = possible_roots.begin();
+
+    std::stringstream roots_string;
+
+    roots_string << *root_string_it++;
+
+    for (; root_string_it != possible_roots.end(); ++root_string_it)
+      roots_string << ", " << *root_string_it;
+
+    mooseError("Multiple Executor roots found: ", roots_string.str());
+  }
+
+  // Set the root executor
+  _executor = _executors[possible_roots.front()];
+}
+
+Executor &
+MooseApp::getExecutor(const std::string & name, bool fail_if_not_found)
+{
+  auto it = _executors.find(name);
+
+  if (it != _executors.end())
+    return *it->second;
+
+  if (fail_if_not_found)
+    mooseError("Executor not found: ", name);
+
+  return *_null_executor;
+}
+
+Executioner *
+MooseApp::getExecutioner() const
+{
+  return _executioner.get() ? _executioner.get() : _executor.get();
 }
 
 void
@@ -2154,42 +2323,105 @@ MooseApp::addRelationshipManager(std::shared_ptr<RelationshipManager> new_rm)
   return add;
 }
 
+bool
+MooseApp::hasRMClone(const RelationshipManager & template_rm, const MeshBase & mesh) const
+{
+  auto it = _template_to_clones.find(&template_rm);
+  // C++ does short circuiting so we're safe here
+  return (it != _template_to_clones.end()) && (it->second.find(&mesh) != it->second.end());
+}
+
+RelationshipManager &
+MooseApp::getRMClone(const RelationshipManager & template_rm, const MeshBase & mesh) const
+{
+  auto outer_it = _template_to_clones.find(&template_rm);
+  if (outer_it == _template_to_clones.end())
+    mooseError("The template rm does not exist in our _template_to_clones map");
+
+  auto & mesh_to_clone_map = outer_it->second;
+  auto inner_it = mesh_to_clone_map.find(&mesh);
+  if (inner_it == mesh_to_clone_map.end())
+    mooseError("We should have the mesh key in our mesh");
+
+  return *inner_it->second;
+}
+
 void
 MooseApp::removeRelationshipManager(std::shared_ptr<RelationshipManager> rm)
 {
-  auto * mesh = _action_warehouse.mesh().get();
-  if (mesh->getMeshPtr())
-    mesh->getMesh().remove_ghosting_functor(*rm);
+  auto * const mesh = _action_warehouse.mesh().get();
+  if (!mesh)
+    mooseError("The MooseMesh should exist");
+
+  const MeshBase * const undisp_lm_mesh = mesh->getMeshPtr();
+  RelationshipManager * undisp_clone = nullptr;
+  if (undisp_lm_mesh && hasRMClone(*rm, *undisp_lm_mesh))
+  {
+    undisp_clone = &getRMClone(*rm, *undisp_lm_mesh);
+    const_cast<MeshBase *>(undisp_lm_mesh)->remove_ghosting_functor(*undisp_clone);
+  }
 
   auto & displaced_mesh = _action_warehouse.displacedMesh();
-  if (displaced_mesh)
+  MeshBase * const disp_lm_mesh = displaced_mesh ? &displaced_mesh->getMesh() : nullptr;
+  RelationshipManager * disp_clone = nullptr;
+  if (disp_lm_mesh && hasRMClone(*rm, *disp_lm_mesh))
   {
-    mooseAssert(displaced_mesh->getMeshPtr(),
-                "The displaced mesh gets added late in the game. It should definitely have a mesh "
-                "base attached to it");
-    auto it = _undisp_to_disp_rms.find(rm.get());
-    if (it != _undisp_to_disp_rms.end())
-      displaced_mesh->getMesh().remove_ghosting_functor(*it->second);
+    disp_clone = &getRMClone(*rm, *disp_lm_mesh);
+    disp_lm_mesh->remove_ghosting_functor(*disp_clone);
   }
 
   if (_executioner)
   {
-    auto & problem = _executioner->feProblem();
-    problem.removeAlgebraicGhostingFunctor(*rm);
-
-    if (auto * dp = problem.getDisplacedProblem().get())
+    auto & problem = feProblem();
+    if (undisp_clone)
     {
-      auto it = _undisp_to_disp_rms.find(rm.get());
-      if (it != _undisp_to_disp_rms.end())
-        dp->removeAlgebraicGhostingFunctor(*it->second);
+      problem.removeAlgebraicGhostingFunctor(*undisp_clone);
+      auto & dof_map = problem.getNonlinearSystemBase().dofMap();
+      dof_map.remove_coupling_functor(*undisp_clone);
     }
 
-    auto & dof_map = problem.getNonlinearSystemBase().dofMap();
-    dof_map.remove_coupling_functor(*rm);
+    auto * dp = problem.getDisplacedProblem().get();
+    if (dp && disp_clone)
+      dp->removeAlgebraicGhostingFunctor(*disp_clone);
   }
 
   _factory.releaseSharedObjects(*rm);
   _relationship_managers.erase(rm);
+}
+
+RelationshipManager &
+MooseApp::createRMFromTemplateAndInit(const RelationshipManager & template_rm,
+                                      MeshBase & mesh,
+                                      const DofMap * const dof_map)
+{
+  auto & mesh_to_clone = _template_to_clones[&template_rm];
+  auto it = mesh_to_clone.find(&mesh);
+  if (it != mesh_to_clone.end())
+  {
+    // We've already created a clone for this mesh
+    auto & clone_rm = *it->second;
+    if (!clone_rm.dofMap() && dof_map)
+      // We didn't have a DofMap before, but now we do, so we should re-init
+      clone_rm.init(mesh, dof_map);
+    else if (clone_rm.dofMap() && dof_map && (clone_rm.dofMap() != dof_map))
+      mooseError("Attempting to create and initialize an existing clone with a different DofMap. "
+                 "This should not happen.");
+
+    return clone_rm;
+  }
+
+  // It's possible that this method is going to get called for multiple different MeshBase
+  // objects. If that happens, then we *cannot* risk having a MeshBase object with a ghosting
+  // functor that is init'd with another MeshBase object. So the safe thing to do is to make a
+  // different RM for every MeshBase object that gets called here. Then the
+  // RelationshipManagers stored here in MooseApp are serving as a template only
+  auto pr = mesh_to_clone.emplace(
+      std::make_pair(&const_cast<const MeshBase &>(mesh),
+                     dynamic_pointer_cast<RelationshipManager>(template_rm.clone())));
+  mooseAssert(pr.second, "An insertion should have happened");
+  auto & clone_rm = *pr.first->second;
+  clone_rm.init(mesh, dof_map);
+  return clone_rm;
 }
 
 void
@@ -2200,10 +2432,7 @@ MooseApp::attachRelationshipManagers(MeshBase & mesh, MooseMesh & moose_mesh)
     if (rm->isType(Moose::RelationshipManagerType::GEOMETRIC))
     {
       if (rm->attachGeometricEarly())
-      {
-        rm->init(mesh);
-        mesh.add_ghosting_functor(*rm);
-      }
+        mesh.add_ghosting_functor(createRMFromTemplateAndInit(*rm, mesh));
       else
       {
         // If we have a geometric ghosting functor that can't be attached early, then we have to
@@ -2234,8 +2463,8 @@ MooseApp::attachRelationshipManagers(Moose::RelationshipManagerType rm_type,
     if (!rm->isType(rm_type))
       continue;
 
-    // RM is already attached, and we do not need to handle this on the final stage
-    if (rm->attachGeometricEarly() && attach_geometric_rm_final)
+    // RM is already attached (this also handles the geometric early case)
+    if (_attached_relationship_managers[rm_type].count(rm.get()))
       continue;
 
     if (rm_type == Moose::RelationshipManagerType::GEOMETRIC)
@@ -2258,79 +2487,85 @@ MooseApp::attachRelationshipManagers(Moose::RelationshipManagerType rm_type,
       {
         MeshBase & undisp_mesh_base = mesh->getMesh();
         const DofMap * const undisp_nl_dof_map =
-            _executioner ? &_executioner->feProblem().systemBaseNonlinear().dofMap() : nullptr;
-        rm->init(undisp_mesh_base, undisp_nl_dof_map);
-        undisp_mesh_base.add_ghosting_functor(*rm);
+            _executioner ? &feProblem().systemBaseNonlinear().dofMap() : nullptr;
+        undisp_mesh_base.add_ghosting_functor(
+            createRMFromTemplateAndInit(*rm, undisp_mesh_base, undisp_nl_dof_map));
 
         // In the final stage, if there is a displaced mesh, we need to
         // clone ghosting functors for displacedMesh
         if (attach_geometric_rm_final && _action_warehouse.displacedMesh())
         {
-          std::shared_ptr<GhostingFunctor> clone_gf = rm->clone();
-          auto clone_rm = std::static_pointer_cast<RelationshipManager>(clone_gf);
           MeshBase & disp_mesh_base = _action_warehouse.displacedMesh()->getMesh();
           const DofMap * disp_nl_dof_map = nullptr;
-          if (_executioner && _executioner->feProblem().getDisplacedProblem())
-            disp_nl_dof_map =
-                &_executioner->feProblem().getDisplacedProblem()->systemBaseNonlinear().dofMap();
-          clone_rm->init(disp_mesh_base, disp_nl_dof_map);
-          disp_mesh_base.add_ghosting_functor(clone_gf);
-          _undisp_to_disp_rms.emplace(rm.get(), clone_gf);
+          if (_executioner && feProblem().getDisplacedProblem())
+            disp_nl_dof_map = &feProblem().getDisplacedProblem()->systemBaseNonlinear().dofMap();
+          disp_mesh_base.add_ghosting_functor(
+              createRMFromTemplateAndInit(*rm, disp_mesh_base, disp_nl_dof_map));
         }
         else if (_action_warehouse.displacedMesh())
           mooseError("The displaced mesh should not yet exist at the time that we are attaching "
                      "early geometric relationship managers.");
+
+        // Mark this RM as attached
+        mooseAssert(!_attached_relationship_managers[rm_type].count(rm.get()), "Already attached");
+        _attached_relationship_managers[rm_type].insert(rm.get());
       }
     }
     else // rm_type is algebraic or coupling
     {
-      if (!_executioner)
+      if (!_executioner && !_executor)
         mooseError("We must have an executioner by now or else we do not have to data to add "
                    "algebraic or coupling functors to in MooseApp::attachRelationshipManagers");
 
       // Now we've built the problem, so we can use it
-      auto & problem = _executioner->feProblem();
+      auto & problem = feProblem();
       auto & undisp_nl = problem.systemBaseNonlinear();
       auto & undisp_nl_dof_map = undisp_nl.dofMap();
-
-      // Ensure that the relationship manager is initialized
-      rm->init(problem.mesh().getMesh(), &undisp_nl_dof_map);
-
-      std::shared_ptr<GhostingFunctor> clone_gf = nullptr;
-      if (_action_warehouse.displacedMesh())
-      {
-        clone_gf = rm->clone();
-        const DofMap * const disp_nl_dof_map =
-            problem.getDisplacedProblem()
-                ? &problem.getDisplacedProblem()->systemBaseNonlinear().dofMap()
-                : nullptr;
-        static_cast<RelationshipManager *>(clone_gf.get())
-            ->init(_action_warehouse.displacedMesh()->getMesh(), disp_nl_dof_map);
-      }
+      auto & undisp_mesh = problem.mesh().getMesh();
 
       if (rm->useDisplacedMesh() && problem.getDisplacedProblem())
       {
         if (rm_type == Moose::RelationshipManagerType::COUPLING)
           // We actually need to add this to the FEProblemBase NonlinearSystemBase's DofMap
           // because the DisplacedProblem "nonlinear" DisplacedSystem doesn't have any matrices
-          // for which to do coupling
-          undisp_nl_dof_map.add_coupling_functor(*rm, /*to_mesh = */ false);
+          // for which to do coupling. It's actually horrifying to me that we are adding a coupling
+          // functor, that is going to determine its couplings based on a displaced MeshBase object,
+          // to a System associated with the undisplaced MeshBase object (there is only ever one
+          // EquationSystems object per MeshBase object and visa versa). So here I'm left with the
+          // choice of whether to pass in a MeshBase object that is *not* the MeshBase object that
+          // will actually determine the couplings or to pass in the MeshBase object that is
+          // inconsistent with the System DofMap that we are adding the coupling functor for! Let's
+          // err on the side of *libMesh* consistency and pass properly paired MeshBase-DofMap
+          undisp_nl_dof_map.add_coupling_functor(
+              createRMFromTemplateAndInit(*rm, undisp_mesh, &undisp_nl_dof_map),
+              /*to_mesh = */ false);
 
         else if (rm_type == Moose::RelationshipManagerType::ALGEBRAIC)
         {
-          problem.getDisplacedProblem()->addAlgebraicGhostingFunctor(clone_gf,
-                                                                     /*to_mesh = */ false);
-          _undisp_to_disp_rms.emplace(rm.get(), clone_gf);
+          auto & displaced_problem = *problem.getDisplacedProblem();
+          MeshBase & disp_mesh = displaced_problem.mesh().getMesh();
+          const DofMap * const disp_nl_dof_map = &displaced_problem.systemBaseNonlinear().dofMap();
+          displaced_problem.addAlgebraicGhostingFunctor(
+              createRMFromTemplateAndInit(*rm, disp_mesh, disp_nl_dof_map),
+              /*to_mesh = */ false);
         }
       }
       else // undisplaced
       {
         if (rm_type == Moose::RelationshipManagerType::COUPLING)
-          undisp_nl_dof_map.add_coupling_functor(*rm, /*to_mesh = */ false);
+          undisp_nl_dof_map.add_coupling_functor(
+              createRMFromTemplateAndInit(*rm, undisp_mesh, &undisp_nl_dof_map),
+              /*to_mesh = */ false);
 
         else if (rm_type == Moose::RelationshipManagerType::ALGEBRAIC)
-          problem.addAlgebraicGhostingFunctor(*rm, /*to_mesh = */ false);
+          problem.addAlgebraicGhostingFunctor(
+              createRMFromTemplateAndInit(*rm, undisp_mesh, &undisp_nl_dof_map),
+              /*to_mesh = */ false);
       }
+
+      // Mark this RM as attached
+      mooseAssert(!_attached_relationship_managers[rm_type].count(rm.get()), "Already attached");
+      _attached_relationship_managers[rm_type].insert(rm.get());
     }
   }
 }
@@ -2373,7 +2608,7 @@ MooseApp::getRelationshipManagerInfo() const
     {
       const auto * gf_ptr = dynamic_cast<const RelationshipManager *>(gf);
       if (!gf_ptr)
-        // Count how many occurances of the same Ghosting Functor types we are encountering
+        // Count how many occurences of the same Ghosting Functor types we are encountering
         counts[demangle(typeid(*gf).name())]++;
     }
 
@@ -2397,7 +2632,7 @@ MooseApp::getRelationshipManagerInfo() const
     {
       const auto * gf_ptr = dynamic_cast<const RelationshipManager *>(gf);
       if (!gf_ptr)
-        // Count how many occurances of the same Ghosting Functor types we are encountering
+        // Count how many occurences of the same Ghosting Functor types we are encountering
         counts[demangle(typeid(*gf).name())]++;
     }
 
@@ -2461,4 +2696,22 @@ MooseApp::registerRestartableDataMapName(const RestartableDataMapName & name, st
   suffix.insert(0, "_");
   _restartable_meta_data.emplace(
       std::make_pair(name, std::make_pair(RestartableDataMap(), suffix)));
+}
+
+PerfGraph &
+MooseApp::createRecoverablePerfGraph()
+{
+  registerRestartableNameWithFilter("perf_graph", Moose::RESTARTABLE_FILTER::RECOVERABLE);
+
+  auto perf_graph =
+      std::make_unique<RestartableData<PerfGraph>>("perf_graph",
+                                                   this,
+                                                   type() + " (" + name() + ')',
+                                                   *this,
+                                                   getParam<bool>("perf_graph_live_all"),
+                                                   !getParam<bool>("disable_perf_graph_live"));
+
+  return dynamic_cast<RestartableData<PerfGraph> &>(
+             registerRestartableData("perf_graph", std::move(perf_graph), 0, false))
+      .set();
 }

@@ -8,7 +8,6 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "libmesh/petsc_macro.h"
-#if !PETSC_VERSION_LESS_THAN(3, 3, 0)
 #include "FieldSplitPreconditioner.h"
 
 // MOOSE includes
@@ -62,7 +61,7 @@ FieldSplitPreconditioner::FieldSplitPreconditioner(const InputParameters & param
   // the fieldSplit preconditioner
   bool full = getParam<bool>("full");
   // how variables couple
-  std::unique_ptr<CouplingMatrix> cm = libmesh_make_unique<CouplingMatrix>(n_vars);
+  std::unique_ptr<CouplingMatrix> cm = std::make_unique<CouplingMatrix>(n_vars);
   if (!full)
   {
     // put 1s on diagonal
@@ -97,5 +96,3 @@ FieldSplitPreconditioner::FieldSplitPreconditioner(const InputParameters & param
   // apply prefix and store PETSc options
   _fe_problem.getNonlinearSystemBase().setupFieldDecomposition();
 }
-
-#endif

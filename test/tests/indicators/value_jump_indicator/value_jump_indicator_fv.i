@@ -53,7 +53,7 @@
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []

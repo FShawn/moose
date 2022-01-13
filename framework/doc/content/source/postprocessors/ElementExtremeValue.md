@@ -2,9 +2,15 @@
 
 !syntax description /Postprocessors/ElementExtremeValue
 
-## Example Input File Syntax
+You can optionally provide a [!param](/Postprocessors/ElementExtremeValue/proxy_variable),
+which will change the behavior of this postprocessor to
+find the quadrature point at which the proxy variable reaches the max/min value,
+and then return the value of the specified variable at that point.
 
-!! Describe and include an example of how to use the ElementExtremeValue object.
+The corresponding postprocessor that find extreme values of nodal variables
+evaluated at nodes is [NodalExtremeValue](NodalExtremeValue.md)
+
+## Example Input File Syntax
 
 !syntax parameters /Postprocessors/ElementExtremeValue
 

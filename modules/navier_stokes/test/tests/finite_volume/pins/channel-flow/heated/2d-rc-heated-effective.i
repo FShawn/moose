@@ -20,10 +20,6 @@ velocity_interp_method='rc'
   []
 []
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Variables]
   inactive = 'temp_solid'
   [u]
@@ -148,16 +144,17 @@ velocity_interp_method='rc'
     porosity = porosity
   []
   [energy_diffusion]
-    type = PINSFVEnergyEffectiveDiffusion
+    type = PINSFVEnergyAnisotropicDiffusion
     kappa = 'kappa'
     variable = temperature
+    porosity = porosity
   []
   [energy_convection]
     type = PINSFVEnergyAmbientConvection
     variable = temperature
     is_solid = false
-    temp_fluid = temperature
-    temp_solid = temp_solid
+    T_fluid = temperature
+    T_solid = temp_solid
     h_solid_fluid = 'h_cv'
   []
 
@@ -170,8 +167,8 @@ velocity_interp_method='rc'
     type = PINSFVEnergyAmbientConvection
     variable = temp_solid
     is_solid = true
-    temp_fluid = temperature
-    temp_solid = temp_solid
+    T_fluid = temperature
+    T_solid = temp_solid
     h_solid_fluid = 'h_cv'
   []
 []
@@ -252,12 +249,17 @@ velocity_interp_method='rc'
 
 [Materials]
   [constants]
-    type = ADGenericConstantMaterial
-    prop_names = 'cp h_cv'
-    prop_values = '${cp} 1'
+    type = ADGenericFunctorMaterial
+    prop_names = 'h_cv'
+    prop_values = '1'
+  []
+  [functor_constants]
+    type = ADGenericFunctorMaterial
+    prop_names = 'cp'
+    prop_values = '${cp}'
   []
   [kappa]
-    type = ADGenericConstantVectorMaterial
+    type = ADGenericVectorFunctorMaterial
     prop_names = 'kappa'
     prop_values = '1e-3 1e-2 1e-1'
   []

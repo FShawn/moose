@@ -201,7 +201,7 @@
       boundary = bottom
       function = pressure
       factor = 1
-      alpha = 0.11
+      hht_alpha = 0.11
       displacements = 'disp_x disp_y disp_z'
     [../]
   [../]
@@ -256,17 +256,17 @@
     type = TimestepSize
   [../]
   [./disp]
-    type = NodalMaxValue
+    type = NodalExtremeValue
     variable = disp_y
     boundary = bottom
   [../]
   [./vel]
-    type = NodalMaxValue
+    type = NodalExtremeValue
     variable = vel_y
     boundary = bottom
   [../]
   [./accel]
-    type = NodalMaxValue
+    type = NodalExtremeValue
     variable = accel_y
     boundary = bottom
   [../]

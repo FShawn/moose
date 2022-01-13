@@ -12,10 +12,6 @@ mu = ${fparse rho * bulk_u * 2 * H / Re}
 advected_interp_method='upwind'
 velocity_interp_method='rc'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   [gen]
     type = CartesianMeshGenerator
@@ -113,7 +109,7 @@ velocity_interp_method='rc'
     type = INSFVMomentumPressure
     variable = u
     momentum_component = 'x'
-    p = pressure
+    pressure = pressure
   []
 
   [v_advection]
@@ -147,7 +143,7 @@ velocity_interp_method='rc'
     type = INSFVMomentumPressure
     variable = v
     momentum_component = 'y'
-    p = pressure
+    pressure = pressure
   []
 []
 

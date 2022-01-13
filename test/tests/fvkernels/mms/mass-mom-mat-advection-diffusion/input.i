@@ -12,10 +12,6 @@
   advected_interp_method = 'average'
 []
 
-[Problem]
-  kernel_coverage_check = false
-[]
-
 [Variables]
   [fv_rho]
     order = CONSTANT
@@ -94,7 +90,7 @@
     velocity = 'fv_velocity'
   []
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []

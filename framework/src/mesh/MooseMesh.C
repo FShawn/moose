@@ -608,10 +608,10 @@ MooseMesh::cacheChangedLists()
 
   _coarsened_element_children.clear();
 
-  _refined_elements = libmesh_make_unique<ConstElemPointerRange>(cclt._refined_elements.begin(),
-                                                                 cclt._refined_elements.end());
-  _coarsened_elements = libmesh_make_unique<ConstElemPointerRange>(cclt._coarsened_elements.begin(),
-                                                                   cclt._coarsened_elements.end());
+  _refined_elements = std::make_unique<ConstElemPointerRange>(cclt._refined_elements.begin(),
+                                                              cclt._refined_elements.end());
+  _coarsened_elements = std::make_unique<ConstElemPointerRange>(cclt._coarsened_elements.begin(),
+                                                                cclt._coarsened_elements.end());
   _coarsened_element_children = cclt._coarsened_element_children;
 }
 
@@ -672,8 +672,8 @@ MooseMesh::updateActiveSemiLocalNodeRange(std::set<dof_id_type> & ghosted_elems)
   }
 
   // Now create the actual range
-  _active_semilocal_node_range = libmesh_make_unique<SemiLocalNodeRange>(
-      _semilocal_node_list.begin(), _semilocal_node_list.end());
+  _active_semilocal_node_range = std::make_unique<SemiLocalNodeRange>(_semilocal_node_list.begin(),
+                                                                      _semilocal_node_list.end());
 }
 
 bool
@@ -904,7 +904,7 @@ MooseMesh::getActiveLocalElementRange()
   {
     TIME_SECTION("getActiveLocalElementRange", 5);
 
-    _active_local_elem_range = libmesh_make_unique<ConstElemRange>(
+    _active_local_elem_range = std::make_unique<ConstElemRange>(
         getMesh().active_local_elements_begin(), getMesh().active_local_elements_end(), GRAIN_SIZE);
   }
 
@@ -918,7 +918,7 @@ MooseMesh::getActiveNodeRange()
   {
     TIME_SECTION("getActiveNodeRange", 5);
 
-    _active_node_range = libmesh_make_unique<NodeRange>(
+    _active_node_range = std::make_unique<NodeRange>(
         getMesh().active_nodes_begin(), getMesh().active_nodes_end(), GRAIN_SIZE);
   }
 
@@ -941,7 +941,7 @@ MooseMesh::getLocalNodeRange()
   {
     TIME_SECTION("getLocalNodeRange", 5);
 
-    _local_node_range = libmesh_make_unique<ConstNodeRange>(
+    _local_node_range = std::make_unique<ConstNodeRange>(
         getMesh().local_nodes_begin(), getMesh().local_nodes_end(), GRAIN_SIZE);
   }
 
@@ -956,7 +956,7 @@ MooseMesh::getBoundaryNodeRange()
     TIME_SECTION("getBoundaryNodeRange", 5);
 
     _bnd_node_range =
-        libmesh_make_unique<ConstBndNodeRange>(bndNodesBegin(), bndNodesEnd(), GRAIN_SIZE);
+        std::make_unique<ConstBndNodeRange>(bndNodesBegin(), bndNodesEnd(), GRAIN_SIZE);
   }
 
   return _bnd_node_range.get();
@@ -970,7 +970,7 @@ MooseMesh::getBoundaryElementRange()
     TIME_SECTION("getBoundaryElementRange", 5);
 
     _bnd_elem_range =
-        libmesh_make_unique<ConstBndElemRange>(bndElemsBegin(), bndElemsEnd(), GRAIN_SIZE);
+        std::make_unique<ConstBndElemRange>(bndElemsBegin(), bndElemsEnd(), GRAIN_SIZE);
   }
 
   return _bnd_elem_range.get();
@@ -1306,13 +1306,7 @@ MooseMesh::getSubdomainID(const SubdomainName & subdomain_name) const
   if (subdomain_name == "ANY_BLOCK_ID")
     mooseError("Please use getSubdomainIDs() when passing \"ANY_BLOCK_ID\"");
 
-  SubdomainID id = Moose::INVALID_BLOCK_ID;
-  std::istringstream ss(subdomain_name);
-
-  if (!(ss >> id) || !ss.eof())
-    id = getMesh().get_id_by_name(subdomain_name);
-
-  return id;
+  return MooseMeshUtils::getSubdomainID(subdomain_name, getMesh());
 }
 
 std::vector<SubdomainID>
@@ -1331,13 +1325,7 @@ MooseMesh::getSubdomainIDs(const std::vector<SubdomainName> & subdomain_name) co
       break;
     }
 
-    SubdomainID id = Moose::INVALID_BLOCK_ID;
-    std::istringstream ss(subdomain_name[i]);
-
-    if (!(ss >> id) || !ss.eof())
-      id = getMesh().get_id_by_name(subdomain_name[i]);
-
-    ids[i] = id;
+    ids[i] = MooseMeshUtils::getSubdomainID(subdomain_name[i], getMesh());
   }
 
   return ids;
@@ -1435,11 +1423,12 @@ MooseMesh::buildPeriodicNodeMap(std::multimap<dof_id_type, dof_id_type> & period
   using KDTreeType = nanoflann::KDTreeSingleIndexAdaptor<
       nanoflann::L2_Simple_Adaptor<Real, PointListAdaptor<PeriodicNodeInfo>>,
       PointListAdaptor<PeriodicNodeInfo>,
-      LIBMESH_DIM>;
+      LIBMESH_DIM,
+      std::size_t>;
   const unsigned int max_leaf_size = 20; // slightly affects runtime
   auto point_list =
       PointListAdaptor<PeriodicNodeInfo>(periodic_nodes.begin(), periodic_nodes.end());
-  auto kd_tree = libmesh_make_unique<KDTreeType>(
+  auto kd_tree = std::make_unique<KDTreeType>(
       LIBMESH_DIM, point_list, nanoflann::KDTreeSingleIndexAdaptorParams(max_leaf_size));
   mooseAssert(kd_tree != nullptr, "KDTree was not properly initialized.");
   kd_tree->buildIndex();

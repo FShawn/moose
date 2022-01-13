@@ -27,6 +27,7 @@ MaterialBase::validParams()
   params += BoundaryRestrictable::validParams();
   params += TransientInterface::validParams();
   params += RandomInterface::validParams();
+  params += FunctorInterface::validParams();
 
   params.addParam<bool>("use_displaced_mesh",
                         false,
@@ -57,6 +58,9 @@ MaterialBase::validParams()
       "",
       "An optional suffix parameter that can be appended to any declared properties. The suffix "
       "will be prepended with a '_' character.");
+
+  // Allow Material objects to be enabled/disabled by Control objects
+  params.declareControllable("enable");
 
   params.addParamNamesToGroup("outputs output_properties", "Outputs");
   params.addParamNamesToGroup("use_displaced_mesh", "Advanced");
@@ -89,6 +93,7 @@ MaterialBase::MaterialBase(const InputParameters & parameters)
                     false),
     ElementIDInterface(this),
     GeometricSearchInterface(this),
+    FunctorInterface(this),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
     _fe_problem(*getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")),
     _tid(parameters.get<THREAD_ID>("_tid")),

@@ -1,6 +1,6 @@
 [Tests]
   design = 'NSFVHeatFluxBC.md'
-  issues = '#57'
+  issues = '#18434'
   [./local_porosity]
     type = Exodiff
     input = wall_heat_transfer.i

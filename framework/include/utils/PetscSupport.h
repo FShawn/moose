@@ -39,11 +39,8 @@ class PetscOptions
 public:
   PetscOptions() : flags("", "", true) {}
 
-  /// Keys for PETSc key-value pairs
-  std::vector<std::string> inames;
-
-  /// Values for PETSc key-value pairs
-  std::vector<std::string> values;
+  /// PETSc key-value pairs
+  std::vector<std::pair<std::string, std::string>> pairs;
 
   /// Single value PETSc options (flags)
   MultiMooseEnum flags;
@@ -163,10 +160,6 @@ void disableNonlinearConvergedReason(FEProblemBase & fe_problem);
  */
 void disableLinearConvergedReason(FEProblemBase & fe_problem);
 
-#if PETSC_VERSION_LESS_THAN(3, 4, 0)
-#define SNESGETLINESEARCH SNESGetSNESLineSearch
-#else
 #define SNESGETLINESEARCH SNESGetLineSearch
-#endif
 }
 }

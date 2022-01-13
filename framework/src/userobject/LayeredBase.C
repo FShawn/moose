@@ -51,6 +51,11 @@ LayeredBase::validParams()
       "cumulative",
       false,
       "When true the value in each layer is the sum of the values up to and including that layer");
+  params.addParam<bool>(
+      "positive_cumulative_direction",
+      true,
+      "When 'cumulative' is true, whether the direction for summing the cumulative value "
+      "is the positive direction or negative direction");
 
   params.addParam<std::vector<SubdomainName>>(
       "block", "The list of block ids (SubdomainID) that this object will be applied");
@@ -60,6 +65,11 @@ LayeredBase::validParams()
                                               "determine the upper and lower geometric bounds for "
                                               "all layers. If this is not specified, the ids "
                                               "specified in 'block' are used for this purpose.");
+
+  params.addParam<Real>("direction_min",
+                        "Minimum coordinate along 'direction' that bounds the layers");
+  params.addParam<Real>("direction_max",
+                        "Maximum coordinate along 'direction' that bounds the layers");
 
   return params;
 }
@@ -80,11 +90,17 @@ LayeredBase::LayeredBase(const InputParameters & parameters)
     _layer_has_value(declareRestartableData<std::vector<int>>("layer_has_value")),
     _layered_base_subproblem(*parameters.getCheckedPointerParam<SubProblem *>("_subproblem")),
     _cumulative(parameters.get<bool>("cumulative")),
-    _layer_bounding_blocks()
+    _positive_cumulative_direction(parameters.get<bool>("positive_cumulative_direction")),
+    _layer_bounding_blocks(),
+    _has_direction_max_min(false)
 {
   if (_layered_base_params.isParamValid("num_layers") &&
       _layered_base_params.isParamValid("bounds"))
-    mooseError("'bounds' and 'num_layers' cannot both be set in ", _layered_base_name);
+    mooseError("'bounds' and 'num_layers' cannot both be set");
+
+  if (!_cumulative && parameters.isParamSetByUser("positive_cumulative_direction"))
+    mooseWarning(
+        "The 'positive_cumulative_direction' parameter is unused when 'cumulative' is false");
 
   if (_layered_base_params.isParamValid("num_layers"))
   {
@@ -101,24 +117,64 @@ LayeredBase::LayeredBase(const InputParameters & parameters)
     std::sort(_layer_bounds.begin(), _layer_bounds.end());
 
     _num_layers = _layer_bounds.size() - 1; // Layers are only in-between the bounds
+    _direction_min = _layer_bounds.front();
+    _direction_max = _layer_bounds.back();
+    _has_direction_max_min = true;
   }
   else
-    mooseError("One of 'bounds' or 'num_layers' must be specified for ", _layered_base_name);
+    mooseError("One of 'bounds' or 'num_layers' must be specified");
 
   if (!_interval_based && _sample_type == 1)
-    mooseError("'sample_type = interpolate' not supported with 'bounds' in ", _layered_base_name);
+    mooseError("'sample_type = interpolate' not supported with 'bounds'");
 
-  if (_layered_base_params.isParamValid("layer_bounding_block"))
+  bool has_layer_bounding_block = _layered_base_params.isParamValid("layer_bounding_block");
+  bool has_block = _layered_base_params.isParamValid("block");
+  bool has_direction_min = _layered_base_params.isParamValid("direction_min");
+  bool has_direction_max = _layered_base_params.isParamValid("direction_max");
+
+  if (_has_direction_max_min && has_direction_min)
+    mooseWarning("'direction_min' is unused when providing 'bounds'");
+
+  if (_has_direction_max_min && has_direction_max)
+    mooseWarning("'direction_max' is unused when providing 'bounds'");
+
+  // can only specify one of layer_bounding_block or the pair direction_max/min
+  if (has_layer_bounding_block && (has_direction_min || has_direction_max))
+    mooseError("Only one of 'layer_bounding_block' and the pair 'direction_max' and "
+               "'direction_min' can be provided");
+
+  // if either one of direction_min or direction_max is specified, must provide the other one
+  if (has_direction_min != has_direction_max)
+    mooseError("If providing the layer max/min directions, both 'direction_max' and "
+               "'direction_min' must be specified.");
+
+  if (has_layer_bounding_block)
     _layer_bounding_blocks = _layered_base_subproblem.mesh().getSubdomainIDs(
         _layered_base_params.get<std::vector<SubdomainName>>("layer_bounding_block"));
-  else if (_layered_base_params.isParamValid("block"))
+  else if (has_block)
     _layer_bounding_blocks = _layered_base_subproblem.mesh().getSubdomainIDs(
         _layered_base_params.get<std::vector<SubdomainName>>("block"));
+
+  // specifying the direction max/min overrides anything set with the 'block'
+  if (has_direction_min && has_direction_max)
+  {
+    _direction_min = parameters.get<Real>("direction_min");
+    _direction_max = parameters.get<Real>("direction_max");
+    _has_direction_max_min = true;
+
+    if (_direction_max <= _direction_min)
+      mooseError("'direction_max' must be larger than 'direction_min'");
+  }
 
   _layer_values.resize(_num_layers);
   _layer_has_value.resize(_num_layers);
 
-  getBounds();
+  // if we haven't already figured out the max/min in specified direction
+  // (either with the 'bounds' or explicit specification from the user), do so
+  if (!_has_direction_max_min)
+    getBounds();
+
+  computeLayerCenters();
 }
 
 Real
@@ -263,11 +319,18 @@ LayeredBase::finalize()
   {
     Real value = 0;
 
-    for (unsigned i = 0; i < _num_layers; ++i)
-    {
-      value += getLayerValue(i);
-      setLayerValue(i, value);
-    }
+    if (_positive_cumulative_direction)
+      for (unsigned i = 0; i < _num_layers; i++)
+      {
+        value += getLayerValue(i);
+        setLayerValue(i, value);
+      }
+    else
+      for (int i = _num_layers - 1; i >= 0; i--)
+      {
+        value += getLayerValue(i);
+        setLayerValue(i, value);
+      }
   }
 }
 
@@ -317,6 +380,25 @@ LayeredBase::getLayer(Point p) const
       // The -1 is because the interval that we fall in is just _before_ the number that is bigger
       // (which is what we found
       return static_cast<unsigned int>(std::distance(_layer_bounds.begin(), one_higher - 1));
+  }
+}
+
+void
+LayeredBase::computeLayerCenters()
+{
+  _layer_centers.resize(_num_layers);
+
+  if (_interval_based)
+  {
+    Real dx = (_direction_max - _direction_min) / _num_layers;
+
+    for (unsigned int i = 0; i < _num_layers; ++i)
+      _layer_centers[i] = (i + 0.5) * dx;
+  }
+  else
+  {
+    for (unsigned int i = 0; i < _num_layers; ++i)
+      _layer_centers[i] = 0.5 * (_layer_bounds[i + 1] + _layer_bounds[i]);
   }
 }
 

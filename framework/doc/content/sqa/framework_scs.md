@@ -108,11 +108,11 @@ List captured variables (by value or reference) in the capture list explicitly w
   });
 ```
 
-## Other C++11 Notes
+## Other C++14 Notes
 
 - Use the `override` keyword on overridden `virtual` methods
 - Use `std::make_shared<T>()` when allocating new memory for shared pointers
-- Use `libmesh_make_unique<T>()` when allocating new memory for unique pointers
+- Use `std::make_unique<T>()` when allocating new memory for unique pointers
 - Make use of std::move() for efficiency when possible
 
 ## Variable Initialization
@@ -156,7 +156,8 @@ All non-system includes should use quotes with a single space between `include` 
 ## Documentation
 
 - In source documentation should be extensive, designed toward the software developer, and be
-  formatted for the use of [Doxygen](https://www.doxygen.nl/index.html). For example,
+  formatted for the use of [Doxygen](https://www.doxygen.nl/index.html).
+
 
 ## Python
 

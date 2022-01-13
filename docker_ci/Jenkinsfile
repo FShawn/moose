@@ -48,7 +48,6 @@ pipeline {
                 --build-arg MOOSE_JOBS=$(grep -c ^processor /proc/cpuinfo) \
                 --build-arg PETSC_REV=$(sub_rev petsc) \
                 --build-arg LIBMESH_REV=$(sub_rev libmesh) \
-                --build-arg MOOSETOOLS_REV=$(sub_rev moosetools) \
                 -f "$WORKSPACE/docker_ci/Dockerfile" \
                 -t $DOCKER_TAG .
                 '''
@@ -100,8 +99,8 @@ pipeline {
                 try {
                     // Send message build was successful
                     slackSend color: 'good', message: "Successful build of ${SLACK_SFX}"
-                } catch (Exception e) {
-                    echo "${SLACK_ERR}" + e.toString() // Slack not required to build
+                } catch (java.lang.NoSuchMethodError ex) {
+                    echo "${SLACK_ERR}" // Slack not required to build
                 }
             }
         }
@@ -116,8 +115,8 @@ pipeline {
 
                     // Send message build failed
                     slackSend color: 'danger', message: "Failed to build ${SLACK_SFX}"
-                } catch (Exception e) {
-                    echo "${SLACK_ERR}" + e.toString() // Slack not required to build
+                } catch (java.lang.NoSuchMethodError ex) {
+                    echo "${SLACK_ERR}" // Slack not required to build
                 }
             }
         }

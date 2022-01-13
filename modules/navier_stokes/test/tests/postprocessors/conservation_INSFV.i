@@ -3,10 +3,6 @@ rho=1
 advected_interp_method='average'
 velocity_interp_method='average'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   inactive = 'mesh internal_boundary_bot internal_boundary_top'
   [mesh]
@@ -239,7 +235,7 @@ velocity_interp_method='average'
     rho = ${rho}
   []
   [advected_material_property]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'advected_rho cp'
     prop_values ='${rho} 1'
   []

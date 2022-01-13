@@ -6,10 +6,6 @@ cp=1
 advected_interp_method='average'
 velocity_interp_method='rc'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   [gen]
     type = GeneratedMeshGenerator
@@ -200,7 +196,7 @@ velocity_interp_method='rc'
 
 [Materials]
   [const]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'cp'
     prop_values = '${cp}'
   []

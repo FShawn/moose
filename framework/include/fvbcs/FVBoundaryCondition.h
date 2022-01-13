@@ -24,6 +24,7 @@
 #include "MeshChangedInterface.h"
 #include "TaggingInterface.h"
 #include "MooseVariableDependencyInterface.h"
+#include "FunctorInterface.h"
 
 // Forward declerations
 template <typename>
@@ -52,7 +53,8 @@ class FVBoundaryCondition : public MooseObject,
                             public MeshChangedInterface,
                             public TaggingInterface,
                             public MooseVariableInterface<Real>,
-                            public MooseVariableDependencyInterface
+                            public MooseVariableDependencyInterface,
+                            public FunctorInterface
 {
 public:
   /**
@@ -70,7 +72,21 @@ public:
    */
   const SubProblem & subProblem() const { return _subproblem; }
 
+  const MooseVariableFV<Real> & variable() const { return _var; }
+
 protected:
+  /**
+   * Determine the single sided face argument when evaluating a functor on a face.
+   * This is used to perform evluations of material properties with the actual face values of
+   * their dependences, rather than interpolate the material property to the boundary.
+   * @param fi the FaceInfo for this face
+   * @param limiter_type the limiter type, to be specified if more than the default average
+   *        interpolation is required for the parameters of the functor
+   */
+  std::tuple<const FaceInfo *, Moose::FV::LimiterType, bool, SubdomainID> singleSidedFaceArg(
+      const FaceInfo * fi = nullptr,
+      Moose::FV::LimiterType limiter_type = Moose::FV::LimiterType::CentralDifference) const;
+
   MooseVariableFV<Real> & _var;
 
   /// Reference to SubProblem
@@ -90,4 +106,7 @@ protected:
 
   /// Mesh this BC is defined on
   MooseMesh & _mesh;
+
+  /// Holds information for the face we are currently examining
+  const FaceInfo * _face_info = nullptr;
 };

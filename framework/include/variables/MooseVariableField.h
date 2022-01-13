@@ -14,6 +14,8 @@
 #include "SubProblem.h"
 #include "MooseMesh.h"
 #include "MooseVariableData.h"
+#include "MooseFunctor.h"
+#include "MeshChangedInterface.h"
 
 #include "libmesh/numeric_vector.h"
 #include "libmesh/dof_map.h"
@@ -35,7 +37,10 @@
  *
  */
 template <typename OutputType>
-class MooseVariableField : public MooseVariableFieldBase
+class MooseVariableField : public MooseVariableFieldBase,
+                           public Moose::Functor<typename Moose::ADType<OutputType>::type>,
+                           public MeshChangedInterface
+
 {
 public:
   // type for gradient, second and divergence of template class OutputType
@@ -329,4 +334,90 @@ public:
    */
   virtual const FieldVariableValue & vectorTagValue(TagID tag) const = 0;
   virtual const DoFValue & nodalVectorTagValue(TagID tag) const = 0;
+
+  void meshChanged() override;
+  void residualSetup() override;
+  void jacobianSetup() override;
+
+protected:
+  using FunctorArg = typename Moose::ADType<OutputType>::type;
+  using Moose::Functor<FunctorArg>::evaluate;
+  using Moose::Functor<FunctorArg>::evaluateGradient;
+  using Moose::Functor<FunctorArg>::evaluateDot;
+  using typename Moose::Functor<FunctorArg>::ValueType;
+  using typename Moose::Functor<FunctorArg>::DotType;
+  using typename Moose::Functor<FunctorArg>::GradientType;
+  using typename Moose::Functor<FunctorArg>::ElemQpArg;
+  using typename Moose::Functor<FunctorArg>::ElemSideQpArg;
+
+  ValueType evaluate(const ElemQpArg & elem_qp, unsigned int state) const override final;
+  ValueType evaluate(const ElemSideQpArg & elem_side_qp, unsigned int state) const override final;
+
+  GradientType evaluateGradient(const ElemQpArg & elem_qp, unsigned int state) const override final;
+  GradientType evaluateGradient(const ElemSideQpArg & elem_side_qp,
+                                unsigned int state) const override final;
+
+  DotType evaluateDot(const ElemQpArg & elem_qp, unsigned int state) const override final;
+  DotType evaluateDot(const ElemSideQpArg & elem_side_qp, unsigned int state) const override final;
+
+  /// the time integrator used for computing time derivatives
+  const TimeIntegrator * const _time_integrator;
+
+  /// A dummy ADReal variable
+  mutable ADReal _ad_real_dummy = 0;
+
+private:
+#ifdef MOOSE_GLOBAL_AD_INDEXING
+  /**
+   * Compute the solution, gradient, and time derivative with provided shape functions
+   */
+  template <typename Shapes, typename Solution, typename GradShapes, typename GradSolution>
+  void computeSolution(const Elem * elem,
+                       const QBase *,
+                       unsigned int state,
+                       const Shapes & phi,
+                       Solution & local_soln,
+                       const GradShapes & grad_phi,
+                       GradSolution & grad_local_soln,
+                       Solution & dot_local_soln) const;
+
+  /**
+   * Evaluate solution and gradient for the \p elem_qp argument
+   */
+  void evaluateOnElement(const ElemQpArg & elem_qp, const unsigned int state) const;
+
+  /**
+   * Evaluate solution and gradient for the \p elem_side_qp argument
+   */
+  void evaluateOnElementSide(const ElemSideQpArg & elem_side_qp, const unsigned int state) const;
+#endif
+
+  /// Keep track of the current elem-qp functor element in order to enable local caching (e.g. if we
+  /// call evaluate on the same element, but just with a different quadrature point, we can return
+  /// previously computed results indexed at the different qp
+  mutable const Elem * _current_elem_qp_functor_elem = nullptr;
+
+  /// The values of the solution for the \p _current_elem_qp_functor_elem
+  mutable std::vector<ValueType> _current_elem_qp_functor_sln;
+
+  /// The values of the gradient for the \p _current_elem_qp_functor_elem
+  mutable std::vector<GradientType> _current_elem_qp_functor_gradient;
+
+  /// The values of the time derivative for the \p _current_elem_qp_functor_elem
+  mutable std::vector<DotType> _current_elem_qp_functor_dot;
+
+  /// Keep track of the current elem-side-qp functor element and side in order to enable local
+  /// caching (e.g. if we call evaluate with the same element and side, but just with a different
+  /// quadrature point, we can return previously computed results indexed at the different qp
+  mutable std::pair<const Elem *, unsigned int> _current_elem_side_qp_functor_elem_side{
+      nullptr, libMesh::invalid_uint};
+
+  /// The values of the solution for the \p _current_elem_side_qp_functor_elem_side
+  mutable std::vector<ValueType> _current_elem_side_qp_functor_sln;
+
+  /// The values of the gradient for the \p _current_elem_side_qp_functor_elem_side
+  mutable std::vector<GradientType> _current_elem_side_qp_functor_gradient;
+
+  /// The values of the time derivative for the \p _current_elem_side_qp_functor_elem_side
+  mutable std::vector<DotType> _current_elem_side_qp_functor_dot;
 };

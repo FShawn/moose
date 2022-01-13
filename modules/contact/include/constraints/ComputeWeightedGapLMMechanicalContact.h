@@ -28,8 +28,14 @@ public:
   using ADMortarConstraint::computeJacobian;
   void computeJacobian(Moose::MortarType mortar_type) override;
   void residualSetup() override;
-  void jacobianSetup() override;
+  void jacobianSetup() override final;
   void post() override;
+
+  /**
+   * Copy of the post routine but that skips assembling inactive nodes
+   */
+  void
+  incorrectEdgeDroppingPost(const std::unordered_set<const Node *> & inactive_lm_nodes) override;
 
 protected:
   ADReal computeQpResidual(Moose::MortarType mortar_type) final;
@@ -51,7 +57,12 @@ protected:
    * using an NCP function. This is also where we actually feed the node-based constraint
    * information into the system residual and Jacobian
    */
-  virtual void enforceConstraintOnNode(const Node * node);
+  virtual void enforceConstraintOnDof(const DofObject * const dof);
+
+  /**
+   * Communicate weighted gaps to the owning process
+   */
+  void communicateGaps();
 
   /// x-displacement on the secondary face
   const ADVariableValue & _secondary_disp_x;
@@ -62,8 +73,12 @@ protected:
   /// y-displacement on the primary face
   const ADVariableValue & _primary_disp_y;
 
-  /// The normal index. This is _qp if we are interpolating the nodal normals, else it is _i
-  const unsigned int & _normal_index;
+  /// For 2D mortar contact no displacement will be specified, so const pointers used
+  const bool _has_disp_z;
+  /// z-displacement on the secondary face
+  const ADVariableValue * const _secondary_disp_z;
+  /// z-displacement on the primary face
+  const ADVariableValue * const _primary_disp_z;
 
   /// This factor multiplies the weighted gap. This member, provided through a user parameter,
   /// should be of a value such that its product with the gap is on the same scale as the lagrange
@@ -73,9 +88,22 @@ protected:
   /// The value of the gap at the current quadrature point
   ADReal _qp_gap;
 
-  /// A map from node to weighted gap
-  std::unordered_map<const Node *, ADReal> _node_to_weighted_gap;
+  /// The value of the LM at the current quadrature point
+  Real _qp_factor;
 
-  /// A pointer member that can be used to help avoid copying ADReals
+  /// Whether to normalize weighted gap by weighting function norm
+  bool _normalize_c;
+
+  /// Whether the dof objects are nodal; if they're not, then they're elemental
+  const bool _nodal;
+
+  /// Vector for computation of weighted gap with nodal normals
+  ADRealVectorValue _qp_gap_nodal;
+
+  /// A map from node to weighted gap and normalization (if requested)
+  std::unordered_map<const DofObject *, std::pair<ADReal, Real>> _dof_to_weighted_gap;
+
+  /// A pointer members that can be used to help avoid copying ADReals
   const ADReal * _weighted_gap_ptr = nullptr;
+  const Real * _normalization_ptr = nullptr;
 };

@@ -207,6 +207,8 @@ public:
     return _neighbor_data->dofIndices();
   }
 
+  Moose::FV::InterpMethod faceInterpolationMethod() const { return _face_interp_method; }
+
   void clearAllDofIndices() final;
 
   const DoFValue & nodalVectorTagValue(TagID) const override
@@ -283,7 +285,8 @@ public:
    * @param elem The element for which to retrieve the gradient
    * @return The gradient at the element centroid
    */
-  virtual const VectorValue<ADReal> & adGradSln(const Elem * const elem) const;
+  virtual const VectorValue<ADReal> & adGradSln(const Elem * const elem,
+                                                const bool correct_skewness = false) const;
 
   /**
    * Retrieve (or potentially compute) a cross-diffusion-corrected gradient on the provided face.
@@ -292,7 +295,8 @@ public:
    * gradients does
    * @param face The face for which to retrieve the gradient.
    */
-  const VectorValue<ADReal> & adGradSln(const FaceInfo & fi) const;
+  const VectorValue<ADReal> & adGradSln(const FaceInfo & fi,
+                                        const bool correct_skewness = false) const;
 
   /**
    * Retrieve (or potentially compute) the uncorrected gradient on the provided face. This
@@ -303,7 +307,8 @@ public:
    * is done in \p adGradSln(const FaceInfo & fi)
    * @param face The face for which to retrieve the gradient
    */
-  const VectorValue<ADReal> & uncorrectedAdGradSln(const FaceInfo & fi) const;
+  const VectorValue<ADReal> & uncorrectedAdGradSln(const FaceInfo & fi,
+                                                   const bool correct_skewness = false) const;
 
   /**
    * Retrieve the solution value at a boundary face. If we're using a one term Taylor series
@@ -479,7 +484,18 @@ public:
    */
   const ADReal & getInternalFaceValue(const Elem * const neighbor,
                                       const FaceInfo & fi,
-                                      const ADReal & elem_value) const;
+                                      const ADReal & elem_value,
+                                      const bool correct_skewness = false) const;
+
+  using FunctorArg = typename Moose::ADType<OutputType>::type;
+  using typename Moose::Functor<FunctorArg>::FaceArg;
+  using typename Moose::Functor<FunctorArg>::SingleSidedFaceArg;
+  using typename Moose::Functor<FunctorArg>::ElemFromFaceArg;
+  using typename Moose::Functor<FunctorArg>::ValueType;
+  using typename Moose::Functor<FunctorArg>::DotType;
+  using typename Moose::Functor<FunctorArg>::GradientType;
+  ADReal getInternalFaceValue(
+      const std::tuple<const FaceInfo *, Moose::FV::LimiterType, bool> & face) const;
 
 protected:
   /**
@@ -505,6 +521,22 @@ protected:
   bool isExtrapolatedBoundaryFace(const FaceInfo & fi) const;
 
 private:
+  using MooseVariableField<OutputType>::evaluate;
+  using MooseVariableField<OutputType>::evaluateGradient;
+  using MooseVariableField<OutputType>::evaluateDot;
+  ValueType evaluate(const Elem * const & elem, unsigned int) const override final;
+  ValueType evaluate(const ElemFromFaceArg & elem_from_face, unsigned int) const override final;
+  ValueType evaluate(const FaceArg & face, unsigned int) const override final;
+  ValueType evaluate(const SingleSidedFaceArg & face, unsigned int) const override final;
+  GradientType evaluateGradient(const Elem * const & elem, unsigned int) const override final;
+  GradientType evaluateGradient(const ElemFromFaceArg & elem_from_face,
+                                unsigned int) const override final;
+  GradientType evaluateGradient(const FaceArg & face, unsigned int) const override final;
+  GradientType evaluateGradient(const SingleSidedFaceArg & face, unsigned int) const override final;
+  DotType evaluateDot(const Elem * const & elem, unsigned int) const override final;
+  DotType evaluateDot(const FaceArg & face, unsigned int) const override final;
+  DotType evaluateDot(const SingleSidedFaceArg & face, unsigned int) const override final;
+
   /**
    * @return the extrapolated value on the boundary face associated with \p fi
    */
@@ -621,20 +653,56 @@ protected:
   mutable std::unordered_map<const FaceInfo *, ADReal> _face_to_value;
 
   /// Whether to use a two term expansion for computing boundary face values
-  const bool _two_term_boundary_expansion;
+  bool _two_term_boundary_expansion;
+
+  /// A member to hold the cell gradient when not caching, used to return a reference (due to
+  /// expensive ADReal copy)
+  mutable VectorValue<ADReal> _temp_cell_gradient;
+
+  /// A member to hold the uncorrected face gradient when not caching, used to return a reference
+  mutable VectorValue<ADReal> _temp_face_unc_gradient;
+
+  /// A member to hold the face gradient when not caching, used to return a reference
+  mutable VectorValue<ADReal> _temp_face_gradient;
+
+  /// A member to hold the face value when not caching, used to return a reference
+  mutable ADReal _temp_face_value;
+
+  /// Whether to cache the gradients the first time they are computed on a cell face. Caching avoids
+  /// redundant calculation, but can increase the memory cost substantially
+  const bool _cache_face_gradients;
+
+  /// Whether to cache face values or re-compute them every time
+  const bool _cache_face_values;
+
+  /// Whether to cache cell gradients
+  const bool _cache_cell_gradients;
+
+  /// Decides if a vertex-based, average or skewed corrected average is used for the
+  /// face interpolation. Other options are not taken into account here,
+  /// but at higher, kernel-based levels.
+  Moose::FV::InterpMethod _face_interp_method;
 
 private:
+  /**
+   * A helper function for evaluating this variable with face arguments. This is leveraged by both
+   * \p FaceArg and \p SingleSidedFaceArg evaluate overloads
+   */
+  template <typename FaceCallingArg>
+  ValueType evaluateFaceHelper(const FaceCallingArg & face) const;
+
+  /**
+   * A helper function for evaluating this variable's time derivative with face arguments. This is
+   * leveraged by both \p FaceArg and \p SingleSidedFaceArg evaluateDot overloads
+   */
+  template <typename FaceCallingArg>
+  DotType evaluateFaceDotHelper(const FaceCallingArg & face) const;
+
   /// A cache for storing gradients on faces
   mutable std::unordered_map<const FaceInfo *, VectorValue<ADReal>> _face_to_grad;
 
   /// A cache that maps from mesh vertices to interpolated finite volume solutions at those vertices
   mutable std::unordered_map<const Node *, ADReal> _vertex_to_value;
-
-  /// Whether to use an extended stencil for interpolating the solution to face centers. If this is
-  /// true then the face center value is computed as a weighted average of connected vertices. If it
-  /// is false, then the face center value is simply a linear interpolation betweeh the two
-  /// neighboring cell center values
-  const bool _use_extended_stencil;
 };
 
 template <typename OutputType>
@@ -643,3 +711,106 @@ MooseVariableFV<OutputType>::adDofValues() const
 {
   return _element_data->adDofValues();
 }
+
+template <typename OutputType>
+typename MooseVariableFV<OutputType>::ValueType
+MooseVariableFV<OutputType>::evaluate(const Elem * const & elem, unsigned int) const
+{
+  return getElemValue(elem);
+}
+
+template <typename OutputType>
+template <typename FaceCallingArg>
+typename MooseVariableFV<OutputType>::ValueType
+MooseVariableFV<OutputType>::evaluateFaceHelper(const FaceCallingArg & face) const
+{
+  const FaceInfo * const fi = std::get<0>(face);
+  mooseAssert(fi, "The face information must be non-null");
+  if (isExtrapolatedBoundaryFace(*fi))
+    return getExtrapolatedBoundaryFaceValue(*fi);
+  else if (isInternalFace(*fi))
+    return getInternalFaceValue(std::make_tuple(fi, std::get<1>(face), std::get<2>(face)));
+  else
+  {
+    mooseAssert(isDirichletBoundaryFace(*fi), "We've run out of face types");
+    return getDirichletBoundaryFaceValue(*fi);
+  }
+}
+
+template <typename OutputType>
+template <typename FaceCallingArg>
+typename MooseVariableFV<OutputType>::DotType
+MooseVariableFV<OutputType>::evaluateFaceDotHelper(const FaceCallingArg & face) const
+{
+  const FaceInfo * const fi = std::get<0>(face);
+  mooseAssert(fi, "The face information must be non-null");
+  if (isInternalFace(*fi))
+  {
+    auto limiter = Moose::FV::Limiter<ADReal>::build(std::get<1>(face));
+    mooseAssert(limiter->constant(),
+                "Cannot do interpolation of time derivatives with non-constant limiting functions "
+                "because we have not implementation computation of gradients of time derivatives.");
+    const bool elem_is_upwind = std::get<2>(face);
+
+    const auto elem_dot = this->dot(&fi->elem());
+    mooseAssert(fi->neighborPtr(), "We're supposed to be on an internal face.");
+    const auto neighbor_dot = this->dot(fi->neighborPtr());
+    const auto & upwind_dot = elem_is_upwind ? elem_dot : neighbor_dot;
+    const auto & downwind_dot = elem_is_upwind ? neighbor_dot : elem_dot;
+
+    return Moose::FV::interpolate(
+        *limiter, upwind_dot, downwind_dot, (ADRealVectorValue *)nullptr, *fi, elem_is_upwind);
+  }
+  else
+  {
+    if (this->hasBlocks(fi->elem().subdomain_id()))
+      // Use element centroid evaluation as face evaluation
+      return this->dot(&fi->elem());
+    mooseAssert(fi->neighborPtr() && this->hasBlocks(fi->neighbor().subdomain_id()),
+                "We should not be evaluating this variable when the variable doesn't exist on "
+                "either side of the face.");
+    return this->dot(fi->neighborPtr());
+  }
+}
+
+template <typename OutputType>
+typename MooseVariableFV<OutputType>::GradientType
+MooseVariableFV<OutputType>::evaluateGradient(const Elem * const & elem, unsigned int) const
+{
+  return adGradSln(elem);
+}
+
+template <typename OutputType>
+typename MooseVariableFV<OutputType>::GradientType
+MooseVariableFV<OutputType>::evaluateGradient(const FaceArg & face, unsigned int) const
+{
+  const auto * const fi = std::get<0>(face);
+  mooseAssert(fi, "We must have a non-null face information");
+  return adGradSln(*fi);
+}
+
+template <typename OutputType>
+typename MooseVariableFV<OutputType>::GradientType
+MooseVariableFV<OutputType>::evaluateGradient(const SingleSidedFaceArg & face, unsigned int) const
+{
+  const auto * const fi = std::get<0>(face);
+  mooseAssert(fi, "We must have a non-null face information");
+  return adGradSln(*fi);
+}
+
+template <typename OutputType>
+typename MooseVariableFV<OutputType>::DotType
+MooseVariableFV<OutputType>::evaluateDot(const FaceArg & face, unsigned int) const
+{
+  return evaluateFaceDotHelper(face);
+}
+
+template <typename OutputType>
+typename MooseVariableFV<OutputType>::DotType
+MooseVariableFV<OutputType>::evaluateDot(const SingleSidedFaceArg & face, unsigned int) const
+{
+  return evaluateFaceDotHelper(face);
+}
+
+template <>
+ADReal MooseVariableFV<Real>::evaluateDot(const Elem * const & elem, unsigned int state) const;

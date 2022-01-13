@@ -39,6 +39,7 @@ const ExecFlagType EXEC_FORCED("FORCED", 0x40);                 // 64
 const ExecFlagType EXEC_FAILED("FAILED", 0x80);                 // 128
 const ExecFlagType EXEC_CUSTOM("CUSTOM", 0x100);                // 256
 const ExecFlagType EXEC_SUBDOMAIN("SUBDOMAIN", 0x200);          // 512
+const ExecFlagType EXEC_ALWAYS("ALWAYS", 0x400);                // 1024
 const ExecFlagType EXEC_PRE_DISPLACE("PRE_DISPLACE");
 const ExecFlagType EXEC_SAME_AS_MULTIAPP("SAME_AS_MULTIAPP");
 const ExecFlagType EXEC_PRE_MULTIAPP_SETUP("PRE_MULTIAPP_SETUP");
@@ -93,6 +94,8 @@ addActionTypes(Syntax & syntax)
   /**************************/
   registerMooseObjectTask("create_problem",               Problem,                false);
   registerMooseObjectTask("setup_executioner",            Executioner,            false);
+  registerMooseObjectTask("read_executor",                Executor,               false);
+  registerTask("add_executor", true);
 
   // This task does not construct an object, but it needs all of the parameters that
   // would normally be used to construct an object.
@@ -168,6 +171,7 @@ addActionTypes(Syntax & syntax)
 
   // clang-format on
 
+  registerTask("check_legacy_params", true);
   registerTask("dynamic_object_registration", false);
   registerTask("common_output", true);
   registerTask("setup_recover_file_base", true);
@@ -203,6 +207,7 @@ addActionTypes(Syntax & syntax)
 
   registerTask("setup_dampers", true);
   registerTask("check_integrity", true);
+  registerTask("resolve_optional_materials", true);
   registerTask("check_integrity_early", true);
   registerTask("setup_quadrature", true);
 
@@ -246,7 +251,8 @@ addActionTypes(Syntax & syntax)
    */
 
   // clang-format off
-  syntax.addDependencySets("(meta_action)"
+  syntax.addDependencySets("(check_legacy_params)"
+                           "(meta_action)"
                            "(dynamic_object_registration)"
                            "(common_output)"
                            "(set_global_params)"
@@ -274,6 +280,8 @@ addActionTypes(Syntax & syntax)
                            "(setup_postprocessor_data)"
                            "(setup_time_integrator)"
                            "(setup_executioner)"
+                           "(read_executor)"
+                           "(add_executor)"
                            "(check_integrity_early)"
                            "(setup_predictor)"
                            "(init_displaced_problem)"
@@ -304,12 +312,6 @@ addActionTypes(Syntax & syntax)
                            "(add_material)"
                            "(add_master_action_material)"
                            "(add_output_aux_variables)"
-                           "(add_algebraic_rm)"
-                           "(add_coupling_rm)"
-                           "(attach_geometric_rm_final)"
-                           "(attach_algebraic_rm)"
-                           "(attach_coupling_rm)"
-                           "(delete_remote_elements_after_late_geometric_ghosting)"
                            "(add_output)"
                            "(add_postprocessor)"
                            "(add_vector_postprocessor)" // MaterialVectorPostprocessor requires this
@@ -319,7 +321,14 @@ addActionTypes(Syntax & syntax)
                            " add_nodal_kernel, add_dg_kernel, add_fv_kernel, add_fv_bc, add_fv_ik,"
                            " add_interface_kernel, add_scalar_kernel, add_aux_scalar_kernel,"
                            " add_indicator, add_marker)"
+                           "(resolve_optional_materials)"
+                           "(add_algebraic_rm)"
+                           "(add_coupling_rm)"
+                           "(attach_geometric_rm_final)"
+                           "(attach_algebraic_rm)"
+                           "(attach_coupling_rm)"
                            "(coupling_functor_check)"
+                           "(delete_remote_elements_after_late_geometric_ghosting)"
                            "(init_problem)"
                            "(add_control)"
                            "(check_output)"
@@ -478,6 +487,7 @@ associateSyntaxInner(Syntax & syntax, ActionFactory & /*action_factory*/)
   registerSyntax("AddFieldSplitAction", "Preconditioning/*/*");
 
   registerSyntax("CreateExecutionerAction", "Executioner");
+  registerSyntax("ReadExecutorParamsAction", "Executors/*");
   registerSyntax("SetupTimeStepperAction", "Executioner/TimeStepper");
   registerSyntax("SetupTimeIntegratorAction", "Executioner/TimeIntegrator");
 

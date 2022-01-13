@@ -57,6 +57,9 @@ namespace hit
 
 const std::string default_indent = "  ";
 
+// lower converts all characters in str to their lower-case versions.
+std::string lower(const std::string & str);
+
 /// toBool converts the given val to a boolean value which is stored in dst.  It returns true if
 /// val was successfully converted to a boolean and returns false otherwise.
 bool toBool(const std::string & val, bool * dst);
@@ -75,6 +78,14 @@ enum class NodeType
   Blank,   /// Represents a blank line
 };
 
+/// Traversal order for walkers. Determines if the walker on a node is executed before or
+/// after the child nodes were traversed.
+enum class TraversalOrder
+{
+  BeforeChildren,
+  AfterChildren
+};
+
 /// nodeTypeName returns a human-readable string representing a name for the give node type.
 std::string nodeTypeName(NodeType t);
 
@@ -86,7 +97,7 @@ class Error : public std::exception
 {
 public:
   Error(const std::string & msg);
-  virtual const char * what() const throw() override;
+  virtual const char * what() const noexcept override;
   std::string msg;
 };
 
@@ -97,17 +108,25 @@ public:
   ParseError(const std::string & msg);
 };
 
-/// Walker is an abstract interface that can be implemented to perform operations that traverse ag
+/// Walker is an interface that can be implemented to perform operations that traverse a
 /// parsed hit node tree.  Implementing classes are passed to the Node::walk function.
 class Walker
 {
 public:
+  virtual ~Walker() {}
+
   /// walk is called when the walker is passed into a Node::walk function for each relevant node in
   /// the hit (sub)tree.  fullpath is the fully-qualified (absolute) path to the hit node
   /// where each section header is a path-element.  nodepath is the path for the node of interest -
   /// section name for Section nodes and field/parameter name for Field nodes.  n is the actual
   /// node.
   virtual void walk(const std::string & fullpath, const std::string & nodepath, Node * n) = 0;
+
+  /// return the default node type this walker should be applied to
+  virtual NodeType nodeType() { return NodeType::Field; }
+
+  /// return the default traversal order
+  virtual TraversalOrder traversalOrder() { return TraversalOrder::BeforeChildren; }
 };
 
 /// strRepeat returns a string of s repeated n times.
@@ -183,12 +202,12 @@ public:
   Node * root();
   /// clone returns a complete (deep) copy of this node.  The caller will be responsible for
   /// managing the memory/deallocation of the returned clone node.
-  virtual Node * clone() = 0;
+  virtual Node * clone(bool absolute_path = false) = 0;
 
   /// render builds an hit syntax/text that is equivalent to the hit tree starting at this
   /// node (and downward) - i.e. parsing this function's returned string would yield a node tree
   /// identical to this nodes tree downward.  indent is the indent level using indent_text as the
-  /// indent string (repeated once for each level).  maxlen is the maximum line lengch before
+  /// indent string (repeated once for each level).  maxlen is the maximum line length before
   /// breaking string values.
   virtual std::string
   render(int indent = 0, const std::string & indent_text = default_indent, int maxlen = 0);
@@ -197,7 +216,9 @@ public:
   /// doesn't visit any nodes that require traversing this node's parent) calling the passed
   /// walker's walk function for each node visited.  w->walk is not called for nodes that are not
   /// of type t although nodes not of type t are still traversed.
-  void walk(Walker * w, NodeType t = NodeType::Field);
+  void walk(Walker * w) { walk(w, w->nodeType(), w->traversalOrder()); }
+  void walk(Walker * w, NodeType t) { walk(w, t, w->traversalOrder()); }
+  void walk(Walker * w, NodeType t, TraversalOrder o);
 
   /// find follows the tree along the given path starting at this node (downward not checking any
   /// nodes that require traversing this node's parent) and returns the first node it finds at the
@@ -336,7 +357,7 @@ Node::paramInner(Node * n)
   return n->vecStrVal();
 }
 
-/// Comment repsents an in-file comment (i.e. "# some comment text...")
+/// Comment represents an in-file comment (i.e. "# some comment text...")
 class Comment : public Node
 {
 public:
@@ -347,7 +368,7 @@ public:
 
   virtual std::string
   render(int indent = 0, const std::string & indent_text = default_indent, int maxlen = 0) override;
-  virtual Node * clone() override;
+  virtual Node * clone(bool absolute_path = false) override;
 
 private:
   std::string _text;
@@ -365,7 +386,7 @@ public:
   {
     return "\n";
   }
-  virtual Node * clone() override { return new Blank(); };
+  virtual Node * clone(bool /*absolute_path = false*/) override { return new Blank(); };
 };
 
 /// Section represents a hit section including the section header path and all entries inside
@@ -380,7 +401,7 @@ public:
 
   virtual std::string
   render(int indent = 0, const std::string & indent_text = default_indent, int maxlen = 0) override;
-  virtual Node * clone() override;
+  virtual Node * clone(bool absolute_path = false) override;
 
 private:
   std::string _path;
@@ -408,7 +429,7 @@ public:
 
   virtual std::string
   render(int indent = 0, const std::string & indent_text = default_indent, int maxlen = 0) override;
-  virtual Node * clone() override;
+  virtual Node * clone(bool absolute_path = false) override;
 
   /// kind returns the semantic type of the value stored in this field (e.g. Int, Bool, Float,
   /// String).
@@ -554,6 +575,66 @@ private:
                  std::vector<Node *> & unused);
 
   std::vector<Pattern> _patterns;
+};
+
+class GatherParamWalker : public Walker
+{
+public:
+  typedef std::map<std::string, hit::Node *> ParamMap;
+  GatherParamWalker(ParamMap & map) : _map(map) {}
+  void walk(const std::string & fullpath, const std::string & /*nodepath*/, hit::Node * n) override
+  {
+    if (n->type() == hit::NodeType::Field)
+      _map[fullpath] = n;
+  }
+
+private:
+  ParamMap & _map;
+};
+
+class RemoveParamWalker : public Walker
+{
+public:
+  RemoveParamWalker(const GatherParamWalker::ParamMap & map) : _map(map) {}
+  void
+  walk(const std::string & /*fullpath*/, const std::string & /*nodepath*/, hit::Node * n) override
+  {
+    auto children = n->children();
+    for (auto child : children)
+    {
+      auto it = _map.find(child->fullpath());
+      if (it != _map.end() && it->second->strVal() == child->strVal())
+        delete child;
+    }
+  }
+
+  NodeType nodeType() override { return NodeType::Section; }
+
+private:
+  const GatherParamWalker::ParamMap & _map;
+};
+
+class RemoveEmptySectionWalker : public Walker
+{
+public:
+  RemoveEmptySectionWalker() {}
+  void
+  walk(const std::string & /*fullpath*/, const std::string & /*nodepath*/, hit::Node * n) override
+  {
+    auto children = n->children(NodeType::Section);
+    for (auto child : children)
+    {
+      std::size_t non_blank = 0;
+      for (auto gchild : child->children())
+        if (gchild->type() != NodeType::Blank && gchild->type() != NodeType::Comment)
+          non_blank++;
+      if (non_blank == 0)
+        delete child;
+    }
+  }
+
+  NodeType nodeType() override { return NodeType::Section; }
+  TraversalOrder traversalOrder() override { return TraversalOrder::AfterChildren; }
 };
 
 } // namespace hit

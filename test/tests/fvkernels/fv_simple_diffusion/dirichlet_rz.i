@@ -52,7 +52,7 @@
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []
@@ -76,7 +76,6 @@
 [Problem]
   type = FEProblem
   coord_type = RZ
-  kernel_coverage_check = off
 []
 
 [Executioner]
@@ -89,4 +88,3 @@
 [Outputs]
   exodus = true
 []
-

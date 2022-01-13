@@ -50,26 +50,15 @@ public:
 
   MortarConstraintBase(const InputParameters & parameters);
 
-  virtual void computeResidual() override final
-  {
-    mooseError("MortarConstraintBase do not need computeResidual()");
-  }
-  virtual void computeJacobian() override final
-  {
-    mooseError("MortarConstraintBase do not need computeJacobian()");
-  }
-
   /**
    * Method for computing the residual
-   * @param has_primary Whether the mortar segment element projects onto the primary face
    */
-  virtual void computeResidual(bool has_primary);
+  virtual void computeResidual() override final;
 
   /**
    * Method for computing the Jacobian
-   * @param has_primary Whether the mortar segment element projects onto the primary face
    */
-  virtual void computeJacobian(bool has_primary);
+  virtual void computeJacobian() override final;
 
   /**
    * compute the residual for the specified element type
@@ -108,6 +97,20 @@ public:
    */
   virtual void post() {}
 
+  /**
+   * This method will be called after the loop over the mortar segment mesh
+   */
+  virtual void incorrectEdgeDroppingPost(const std::unordered_set<const Node *> &) {}
+
+  /**
+   * A post routine for zeroing all inactive LM DoFs
+   */
+  void zeroInactiveLMDofs(const std::unordered_set<const Node *> & inactive_lm_nodes,
+                          const std::unordered_set<const Elem *> & inactive_lm_elems);
+
+protected:
+  const FEProblemBase & feProblem() const { return _fe_problem; }
+
 private:
   /// Reference to the finite element problem
   FEProblemBase & _fe_problem;
@@ -133,9 +136,6 @@ private:
   const VariableTestValue _test_dummy;
 
 protected:
-  /// Whether the current mortar segment projects onto a face on the primary side
-  bool _has_primary;
-
   /// Whether to use the dual motar approach
   const bool _use_dual;
 
@@ -145,7 +145,7 @@ protected:
   /// the normals along the primary face
   const MooseArray<Point> & _normals_primary;
 
-  /// the tangents along the secondary face
+  /// Tangent vectors on the secondary faces (libmesh)
   const MooseArray<std::vector<Point>> & _tangents;
 
   /// The element Jacobian times weights

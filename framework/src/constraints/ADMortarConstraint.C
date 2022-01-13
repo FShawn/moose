@@ -146,14 +146,13 @@ ADMortarConstraint::computeJacobian(Moose::MortarType mortar_type)
 
       for (MooseIndex(3) type_index = 0; type_index < 3; ++type_index)
       {
-        // If we don't have a primary element, then we shouldn't be considering derivatives with
-        // respect to primary dofs. More practically speaking, the local K matrix will be improperly
-        // sized whenever we don't have a primary element because we won't be calling
-        // FEProblemBase::reinitNeighborFaceRef from withing ComputeMortarFunctor::operator()
-        if (type_index == 1 && !_has_primary)
+        const auto jacobian_type = jacobian_types[type_index];
+        // There's no actual coupling between secondary and primary dofs
+        if ((jacobian_type == JType::SecondaryPrimary) ||
+            (jacobian_type == JType::PrimarySecondary))
           continue;
 
-        prepareMatrixTagLower(_assembly, ivar, jvar, jacobian_types[type_index]);
+        prepareMatrixTagLower(_assembly, ivar, jvar, jacobian_type);
         for (_i = 0; _i < test_space_size; _i++)
           for (_j = 0; _j < shape_space_sizes[type_index]; _j++)
           {

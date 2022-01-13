@@ -143,6 +143,16 @@
       detail = 'polycrystal circles specified from a file,'
     []
 
+    [PolycrystalCircles_FromFileClipped]
+      type = Exodiff
+      input = 'polycrystalcircles_clipped.i'
+      exodiff = 'polycrystalcircles_clipped_out.e'
+      # This test uses a coloring algorithm that requires PETSc >= 3.5.0.
+      petsc_version = '>=3.5.0'
+
+      detail = 'polycrystal circles specified from a file that may not appear in the final domain,'
+    []
+
     [PolycrystalCircles_FromVector]
       type = Exodiff
       input = 'polycrystalcircles_fromvector.i'
@@ -150,7 +160,7 @@
       # This test uses a coloring algorithm that requires PETSc >= 3.5.0.
       petsc_version = '>=3.5.0'
 
-      detail = 'and polycrystal circles specified from an input vector,'
+      detail = 'polycrystal circles specified from an input vector,'
     []
 
     [HexPolycrystalIC]
@@ -252,6 +262,7 @@
       input = ClosePackIC_3D.i
       exodiff = ClosePackIC_3D_out.e
       method = '!dbg' # This test is too slow in debug
+      valgrind = HEAVY
 
       detail = 'in 3D.'
     []
@@ -307,7 +318,7 @@
 
       detail = 'multiple bounding boxes in 3D.'
     []
-    
+
     [IsolatedBoundingBoxIC_2D]
       type = Exodiff
       input = 'IsolatedBoundingBoxIC_2D.i'
@@ -339,7 +350,7 @@
 
       detail = '3D.'
     []
-      
+
     [IsolatedBoundingBoxIC_2D_Overlapping]
       type = RunException
       input = 'IsolatedBoundingBoxIC_2D_Overlapping.i'
@@ -347,5 +358,15 @@
 
       detail = 'Using IsolatedBoundingBoxIC to create overlapping boxes will throw an error.'
     []
+  []
+
+  [BlockRestriction]
+    type = Exodiff
+    input = 'BlockRestriction.i'
+    exodiff = 'BlockRestriction_out.e'
+    requirement = 'The system shall be able to block-restrict crystal initial conditions.'
+    issues = '#19193'
+    design = 'BicrystalBoundingBoxICAction.md BicrystalCircleGrainICAction.md PolycrystalColoringICAction.md PolycrystalRandomICAction.md PolycrystalVoronoiVoidICAction.md Tricrystal2CircleGrainsICAction.md'
+    recover = false
   []
 []

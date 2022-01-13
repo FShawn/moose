@@ -21,8 +21,13 @@ public:
 
   ComputeFrictionalForceLMMechanicalContact(const InputParameters & parameters);
   void residualSetup() override;
-  void jacobianSetup() override;
   void post() override;
+
+  /**
+   * Copy of the post routine but that skips assembling inactive nodes
+   */
+  void
+  incorrectEdgeDroppingPost(const std::unordered_set<const Node *> & inactive_lm_nodes) override;
 
 protected:
   /**
@@ -42,22 +47,38 @@ protected:
    * where we actually feed the node-based constraint information into the system residual and
    * Jacobian
    */
-  virtual void enforceConstraintOnNode(const Node * node) override;
+  virtual void enforceConstraintOnDof(const DofObject * const dof) override;
 
-  /// A map from node to weighted gap
-  std::unordered_map<const Node *, ADReal> _node_to_weighted_tangential_velocity;
+  /**
+   * Method called from \p post(). Used to enforce node-associated constraints. E.g. for the base \p
+   * ComputeFrictionalForceLMMechanicalContact we enforce PDASS frictional constraints. This is also
+   * where we actually feed the node-based constraint information into the system residual and
+   * Jacobian. Method used to enforce frictional constraints in three-dimensional simulations.
+   */
+  virtual void enforceConstraintOnDof3d(const DofObject * const dof);
 
-  /// A pointer member that can be used to help avoid copying ADReals
-  const ADReal * _tangential_vel_ptr = nullptr;
+  /**
+   * Communicate weighted velocities to the owning process
+   */
+  void communicateVelocities();
 
-  /// The value of the tangential velocity at the current quadrature point
-  ADReal _qp_tangential_velocity;
+  /// A map from node to two tangential velocities
+  std::unordered_map<const DofObject *, std::array<ADReal, 2>> _dof_to_weighted_tangential_velocity;
+
+  /// An array of two pointers to avoid copies
+  std::array<const ADReal *, 2> _tangential_vel_ptr = {{nullptr, nullptr}};
+
+  /// The value of the tangential velocity values at the current quadrature point
+  std::array<ADReal, 2> _qp_tangential_velocity;
+
+  /// The value of the tangential velocity vectors at the current node
+  ADRealVectorValue _qp_tangential_velocity_nodal;
 
   /// Numerical factor used in the tangential constraints for convergence purposes
   const Real _c_t;
 
-  /// Frictional Lagrange's multiplier variable pointer
-  MooseVariable * _friction_var;
+  /// Frictional Lagrange's multiplier variable pointers
+  std::vector<MooseVariable *> _friction_vars;
 
   /// x-velocity on the secondary face
   const ADVariableValue & _secondary_x_dot;
@@ -71,9 +92,21 @@ protected:
   /// y-velocity on the primary face
   const ADVariableValue & _primary_y_dot;
 
+  /// z-velocity on the secondary face
+  const ADVariableValue * const _secondary_z_dot;
+
+  /// z-velocity on the primary face
+  const ADVariableValue * const _primary_z_dot;
+
   /// Small contact pressure value to trigger computation of frictional forces
   const Real _epsilon;
 
   /// Friction coefficient
   const Real _mu;
+
+  /// Automatic flag to determine whether we are doing three-dimensional work
+  bool _3d;
+
+  /// Nodal tangent vectors on the secondary faces (householder from normal vectors)
+  std::array<std::vector<Point>, 2> _nodal_tangents;
 };

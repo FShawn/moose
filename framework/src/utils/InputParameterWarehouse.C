@@ -18,7 +18,7 @@ InputParameterWarehouse::InputParameterWarehouse()
 
 InputParameters &
 InputParameterWarehouse::addInputParameters(const std::string & name,
-                                            InputParameters & parameters,
+                                            const InputParameters & parameters,
                                             THREAD_ID tid /* =0 */)
 {
   // Error if the name contains "::"
@@ -216,7 +216,7 @@ InputParameterWarehouse::addControllableParameterAlias(const MooseObjectParamete
 
     for (auto secondary_ptr : secondaries)
       _controllable_items[tid].emplace_back(
-          libmesh_make_unique<ControllableAlias>(alias, secondary_ptr));
+          std::make_unique<ControllableAlias>(alias, secondary_ptr));
   }
 }
 
@@ -256,4 +256,15 @@ InputParameterWarehouse::dumpChangedControls(bool reset_changed) const
         item->resetChanged();
     }
   return oss.str();
+}
+
+std::vector<MooseObjectParameterName>
+InputParameterWarehouse::getControllableParameterNames(const MooseObjectParameterName & input) const
+{
+  std::vector<MooseObjectParameterName> names;
+  for (THREAD_ID tid = 0; tid < libMesh::n_threads(); ++tid)
+    for (auto it = _controllable_items[tid].begin(); it != _controllable_items[tid].end(); ++it)
+      if ((*it)->name() == input)
+        names.push_back((*it)->name());
+  return names;
 }

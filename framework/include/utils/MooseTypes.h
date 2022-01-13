@@ -438,6 +438,8 @@ using GenericType = typename std::conditional<is_ad, typename ADType<T>::type, T
 template <bool is_ad>
 using GenericReal = typename Moose::GenericType<Real, is_ad>;
 template <bool is_ad>
+using GenericRealVectorValue = typename Moose::GenericType<RealVectorValue, is_ad>;
+template <bool is_ad>
 using GenericRankTwoTensor = typename Moose::GenericType<RankTwoTensor, is_ad>;
 template <bool is_ad>
 using GenericRankThreeTensor = typename Moose::GenericType<RankThreeTensor, is_ad>;
@@ -450,53 +452,11 @@ using GenericVariableGradient = typename Moose::GenericType<VariableGradient, is
 template <bool is_ad>
 using GenericVariableSecond = typename Moose::GenericType<VariableSecond, is_ad>;
 
-#define declareADValidParams(ADObjectType)                                                         \
-  template <>                                                                                      \
-  InputParameters validParams<ADObjectType>()
-
-#define defineADValidParams(ADObjectType, ADBaseObjectType, addedParamCode)                        \
-  template <>                                                                                      \
-  InputParameters validParams<ADObjectType>()                                                      \
-  {                                                                                                \
-    InputParameters params = validParams<ADBaseObjectType>();                                      \
-    addedParamCode;                                                                                \
-    return params;                                                                                 \
-  }                                                                                                \
-  void mooseClangFormatFunction()
-
 #define defineLegacyParams(ObjectType)                                                             \
   template <>                                                                                      \
   InputParameters validParams<ObjectType>()                                                        \
   {                                                                                                \
     return ObjectType::validParams();                                                              \
-  }                                                                                                \
-  void mooseClangFormatFunction()
-
-#define defineADLegacyParams(ADObjectType)                                                         \
-  template <>                                                                                      \
-  InputParameters validParams<ADObjectType>()                                                      \
-  {                                                                                                \
-    return ADObjectType::validParams();                                                            \
-  }                                                                                                \
-  void mooseClangFormatFunction()
-
-#define defineADBaseValidParams(ADObjectType, BaseObjectType, addedParamCode)                      \
-  template <>                                                                                      \
-  InputParameters validParams<ADObjectType>()                                                      \
-  {                                                                                                \
-    InputParameters params = validParams<BaseObjectType>();                                        \
-    addedParamCode;                                                                                \
-    return params;                                                                                 \
-  }                                                                                                \
-  void mooseClangFormatFunction()
-
-#define defineADValidParamsFromEmpty(ADObjectType, addedParamCode)                                 \
-  template <>                                                                                      \
-  InputParameters validParams<ADObjectType>()                                                      \
-  {                                                                                                \
-    InputParameters params = emptyInputParameters();                                               \
-    addedParamCode;                                                                                \
-    return params;                                                                                 \
   }                                                                                                \
   void mooseClangFormatFunction()
 
@@ -680,8 +640,9 @@ enum EigenSolveType
   EST_JACOBI_DAVIDSON, ///< Jacobi-Davidson
   EST_NONLINEAR_POWER, ///< Nonlinear inverse power
   EST_NEWTON, ///< Newton-based eigensolver with an assembled Jacobian matrix (fully coupled by default)
-  EST_PJFNK, ///< Preconditioned Jacobian-free Newton Krylov
-  EST_JFNK   ///< Jacobian-free Newton Krylov
+  EST_PJFNK,   ///< Preconditioned Jacobian-free Newton Krylov
+  EST_PJFNKMO, ///< The same as PJFNK except that matrix-vector multiplication is employed to replace residual evaluation in linear solver
+  EST_JFNK     ///< Jacobian-free Newton Krylov
 };
 
 /**
@@ -748,18 +709,12 @@ enum LineSearchType
   LS_DEFAULT,
   LS_NONE,
   LS_BASIC,
-#if PETSC_VERSION_LESS_THAN(3, 3, 0)
-  LS_CUBIC,
-  LS_QUADRATIC,
-  LS_BASICNONORMS,
-#else
   LS_SHELL,
   LS_CONTACT,
   LS_PROJECT,
   LS_L2,
   LS_BT,
   LS_CP
-#endif
 };
 
 /**
@@ -918,6 +873,9 @@ DerivativeStringClass(OutputName);
 /// Used for objects that expect MaterialProperty names
 DerivativeStringClass(MaterialPropertyName);
 
+/// Used for objects that expect Moose::Functor names
+DerivativeStringClass(MooseFunctorName);
+
 /// User for accessing Material objects
 DerivativeStringClass(MaterialName);
 
@@ -932,6 +890,9 @@ DerivativeStringClass(ExtraElementIDName);
 
 /// Name of a Reporter Value, second argument to ReporterName (see Reporter.h)
 DerivativeStringClass(ReporterValueName);
+
+/// Name of an Executor.  Used for inputs to Executors
+DerivativeStringClass(ExecutorName);
 
 namespace Moose
 {

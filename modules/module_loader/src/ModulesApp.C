@@ -58,6 +58,9 @@
 #ifdef RDG_ENABLED
 #include "RdgApp.h"
 #endif
+#ifdef REACTOR_ENABLED
+#include "ReactorApp.h"
+#endif
 #ifdef RICHARDS_ENABLED
 #include "RichardsApp.h"
 #endif
@@ -88,11 +91,10 @@ clearUnusedWarnings(Syntax & /*syntax*/, ActionFactory & /*action_factory*/)
 }
 ///@}
 
-template <>
 InputParameters
-validParams<ModulesApp>()
+ModulesApp::validParams()
 {
-  InputParameters params = validParams<MooseApp>();
+  InputParameters params = MooseApp::validParams();
   return params;
 }
 
@@ -163,6 +165,10 @@ ModulesApp::registerObjects(Factory & factory)
 
 #ifdef RDG_ENABLED
   RdgApp::registerObjects(factory);
+#endif
+
+#ifdef REACTOR_ENABLED
+  ReactorApp::registerObjects(factory);
 #endif
 
 #ifdef RICHARDS_ENABLED
@@ -240,6 +246,10 @@ ModulesApp::associateSyntax(Syntax & syntax, ActionFactory & action_factory)
   RdgApp::associateSyntax(syntax, action_factory);
 #endif
 
+#ifdef REACTOR_ENABLED
+  ReactorApp::associateSyntax(syntax, action_factory);
+#endif
+
 #ifdef RICHARDS_ENABLED
   RichardsApp::associateSyntax(syntax, action_factory);
 #endif
@@ -309,6 +319,10 @@ ModulesApp::registerExecFlags(Factory & factory)
 
 #ifdef RDG_ENABLED
   RdgApp::registerExecFlags(factory);
+#endif
+
+#ifdef REACTOR_ENABLED
+  ReactorApp::registerExecFlags(factory);
 #endif
 
 #ifdef RICHARDS_ENABLED
@@ -387,6 +401,10 @@ ModulesApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)
 
 #ifdef RDG_ENABLED
   RdgApp::registerAll(f, af, s);
+#endif
+
+#ifdef REACTOR_ENABLED
+  ReactorApp::registerAll(f, af, s);
 #endif
 
 #ifdef RICHARDS_ENABLED

@@ -128,7 +128,7 @@ LotsOfRaysRayStudy::defineRays()
   if (_compute_expected_distance)
   {
     _bbox_intersection_helper =
-        libmesh_make_unique<BoundingBoxIntersectionHelper>(boundingBox(), _mesh.dimension());
+        std::make_unique<BoundingBoxIntersectionHelper>(boundingBox(), _mesh.dimension());
     _expected_distance = 0;
   }
 
@@ -143,7 +143,7 @@ LotsOfRaysRayStudy::defineRays()
   }
 
   const std::unique_ptr<RayTracingAngularQuadrature> half_aq =
-      _side_aq ? libmesh_make_unique<RayTracingAngularQuadrature>(
+      _side_aq ? std::make_unique<RayTracingAngularQuadrature>(
                      _mesh.dimension(), _polar_quad_order, _azimuthal_quad_order, 0, 1)
                : nullptr;
 
@@ -157,7 +157,7 @@ LotsOfRaysRayStudy::defineRays()
       continue;
 
     // Centroid on this boundary face
-    const auto & side_centroid = sidePtrHelper(elem, side)->vertex_average();
+    const auto & side_centroid = elemSide(*elem, side).vertex_average();
 
     // Vertices on this boundary side -> in direction of all other vertices not on said boundary
     // side on elem

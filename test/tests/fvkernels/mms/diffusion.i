@@ -14,22 +14,6 @@
   []
 []
 
-[Problem]
-  kernel_coverage_check = false
-[]
-
-# [Kernels]
-#   [diff_u]
-#     type = Diffusion
-#     variable = u
-#   []
-#   [body_u]
-#     type = BodyForce
-#     variable = u
-#     function = 'forcing'
-#   []
-# []
-
 [FVKernels]
   [diff_v]
     type = FVDiffusion
@@ -43,15 +27,6 @@
   []
 []
 
-# [BCs]
-#   [boundary]
-#     type = FunctionDirichletBC
-#     boundary = 'left right'
-#     function = 'exact'
-#     variable = u
-#   []
-# []
-
 [FVBCs]
   [boundary]
     type = FVFunctionDirichletBC
@@ -63,7 +38,7 @@
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []

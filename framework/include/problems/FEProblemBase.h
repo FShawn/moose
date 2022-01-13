@@ -30,6 +30,7 @@
 #include "VectorPostprocessor.h"
 #include "PerfGraphInterface.h"
 #include "Attributes.h"
+#include "MooseObjectWarehouse.h"
 
 #include "libmesh/enum_quadrature_type.h"
 #include "libmesh/equation_systems.h"
@@ -79,6 +80,9 @@ class LineSearch;
 class UserObject;
 class AutomaticMortarGeneration;
 class VectorPostprocessor;
+class MooseFunctionBase;
+template <typename>
+class FunctionTempl;
 
 // libMesh forward declarations
 namespace libMesh
@@ -303,7 +307,8 @@ public:
                             Order order,
                             Order volume_order = INVALID_ORDER,
                             Order face_order = INVALID_ORDER,
-                            SubdomainID block = Moose::ANY_BLOCK_ID);
+                            SubdomainID block = Moose::ANY_BLOCK_ID,
+                            bool allow_negative_qweights = true);
 
   /**
    * Increases the element/volume quadrature order for the specified mesh
@@ -360,8 +365,10 @@ public:
    */
   virtual std::vector<VariableName> getVariableNames();
 
-  virtual void initialSetup();
-  virtual void timestepSetup();
+  void initialSetup() override;
+  void timestepSetup() override;
+  void residualSetup() override;
+  void jacobianSetup() override;
 
   virtual void prepare(const Elem * elem, THREAD_ID tid) override;
   virtual void prepareFace(const Elem * elem, THREAD_ID tid) override;
@@ -423,6 +430,7 @@ public:
   virtual void init() override;
   virtual void solve() override;
 
+  ///@{
   /**
    * In general, {evaluable elements} >= {local elements} U {algebraic ghosting elements}. That is,
    * the number of evaluable elements does NOT necessarily equal to the number of local and
@@ -431,8 +439,17 @@ public:
    * local or algebraically ghosted, then all the nodal (Lagrange) degrees of freedom associated
    * with the non-local, non-algebraically-ghosted element will be evaluable, and hence that
    * element will be considered evaluable.
+   *
+   * getNonlinearEvaluableElementRange() returns the evaluable element range based on the nonlinear
+   * system dofmap;
+   * getAuxliaryEvaluableElementRange() returns the evaluable element range based on the auxiliary
+   * system dofmap;
+   * getEvaluableElementRange() returns the element range that is evaluable based on both the
+   * nonlinear dofmap and the auxliary dofmap.
    */
   const ConstElemRange & getEvaluableElementRange();
+  const ConstElemRange & getNonlinearEvaluableElementRange();
+  ///@}
 
   /**
    * Set an exception.  Usually this should not be directly called - but should be called through
@@ -464,6 +481,11 @@ public:
   virtual unsigned int nLinearIterations() const override;
   virtual Real finalNonlinearResidual() const override;
   virtual bool computingInitialResidual() const override;
+
+  /**
+   * Return solver type as a human readable string
+   */
+  virtual std::string solverTypeString() { return Moose::stringify(solverParams()._type); }
 
   /**
    * Returns true if we are in or beyond the initialSetup stage
@@ -557,7 +579,11 @@ public:
   virtual void
   addFunction(const std::string & type, const std::string & name, InputParameters & parameters);
   virtual bool hasFunction(const std::string & name, THREAD_ID tid = 0);
+  template <typename T>
+  bool hasFunction(const std::string & name, THREAD_ID tid = 0) const;
   virtual Function & getFunction(const std::string & name, THREAD_ID tid = 0);
+  template <typename T>
+  FunctionTempl<T> & getFunction(const std::string & name, THREAD_ID tid = 0);
 
   /**
    * add a MOOSE line search
@@ -1352,7 +1378,9 @@ public:
       const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
       const std::pair<SubdomainID, SubdomainID> & primary_secondary_subdomain_pair,
       bool on_displaced,
-      bool periodic);
+      bool periodic,
+      const bool debug,
+      const bool correct_edge_dropping);
 
   const AutomaticMortarGeneration &
   getMortarInterface(const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
@@ -1608,6 +1636,9 @@ public:
    * Convenience function for performing execution of MOOSE systems.
    */
   virtual void execute(const ExecFlagType & exec_type);
+  virtual void executeAllObjects(const ExecFlagType & exec_type);
+
+  virtual Executor & getExecutor(const std::string & name) { return _app.getExecutor(name); }
 
   /**
    * Call compute methods on UserObjects.
@@ -1985,7 +2016,7 @@ protected:
   std::vector<std::unique_ptr<Assembly>> _assembly;
 
   /// functions
-  MooseObjectWarehouse<Function> _functions;
+  MooseObjectWarehouse<MooseFunctionBase> _functions;
 
   /// nonlocal kernels
   MooseObjectWarehouse<KernelBase> _nonlocal_kernels;
@@ -2219,6 +2250,8 @@ protected:
   std::shared_ptr<LineSearch> _line_search;
 
   std::unique_ptr<ConstElemRange> _evaluable_local_elem_range;
+  std::unique_ptr<ConstElemRange> _nl_evaluable_local_elem_range;
+  std::unique_ptr<ConstElemRange> _aux_evaluable_local_elem_range;
 
   /// Automatic differentiaion (AD) flag which indicates whether any consumer has
   /// requested an AD material property or whether any suppier has declared an AD material property
@@ -2353,3 +2386,6 @@ FEProblemBase::addObject(const std::string & type,
 
   return objects;
 }
+
+template <>
+FunctionTempl<Real> & FEProblemBase::getFunction<Real>(const std::string & name, THREAD_ID tid);

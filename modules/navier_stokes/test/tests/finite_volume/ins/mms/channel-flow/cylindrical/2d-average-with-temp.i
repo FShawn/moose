@@ -20,7 +20,6 @@ velocity='velocity'
 []
 
 [Problem]
-  kernel_coverage_check = false
   fv_bcs_integrity_check = true
   coord_type = 'RZ'
 []
@@ -212,10 +211,10 @@ velocity='velocity'
 []
 
 [Materials]
-  [const]
-    type = ADGenericConstantMaterial
-    prop_names = 'k cp'
-    prop_values = '${k} ${cp}'
+  [const_functor]
+    type = ADGenericFunctorMaterial
+    prop_names = 'cp k'
+    prop_values = '${cp} ${k}'
   []
   [ins_fv]
     type = INSFVMaterial

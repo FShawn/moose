@@ -799,10 +799,10 @@ Parser::initSyntaxFormatter(SyntaxFormatterType type, bool dump_mode)
   switch (type)
   {
     case INPUT_FILE:
-      _syntax_formatter = libmesh_make_unique<InputFileFormatter>(dump_mode);
+      _syntax_formatter = std::make_unique<InputFileFormatter>(dump_mode);
       break;
     case YAML:
-      _syntax_formatter = libmesh_make_unique<YAMLFormatter>(dump_mode);
+      _syntax_formatter = std::make_unique<YAMLFormatter>(dump_mode);
       break;
     default:
       mooseError("Unrecognized Syntax Formatter requested");
@@ -1349,6 +1349,7 @@ Parser::extractParams(const std::string & prefix, InputParameters & p)
       setscalar(MultiAppName, string);
       setscalar(OutputName, string);
       setscalar(MaterialPropertyName, string);
+      setscalar(MooseFunctorName, string);
       setscalar(MaterialName, string);
       setscalar(DistributionName, string);
       setscalar(SamplerName, string);
@@ -1356,6 +1357,7 @@ Parser::extractParams(const std::string & prefix, InputParameters & p)
       setscalar(MeshGeneratorName, string);
       setscalar(ExtraElementIDName, string);
       setscalar(PostprocessorName, PostprocessorName);
+      setscalar(ExecutorName, string);
 
       // Moose Compound Scalars
       setscalar(RealVectorValue, RealVectorValue);
@@ -1409,6 +1411,7 @@ Parser::extractParams(const std::string & prefix, InputParameters & p)
       setvector(VectorPostprocessorName, string);
       setvector(OutputName, string);
       setvector(MaterialPropertyName, string);
+      setvector(MooseFunctorName, string);
       setvector(MaterialName, string);
       setvector(DistributionName, string);
       setvector(SamplerName, string);
@@ -1418,6 +1421,7 @@ Parser::extractParams(const std::string & prefix, InputParameters & p)
       setvector(ExtraElementIDName, string);
       setvector(ReporterName, string);
       setvector(ReporterValueName, string);
+      setvector(ExecutorName, string);
 
       // map types
       setmap(string, Real);
@@ -1456,6 +1460,7 @@ Parser::extractParams(const std::string & prefix, InputParameters & p)
       setvectorvector(MarkerName);
       setvectorvector(OutputName);
       setvectorvector(MaterialPropertyName);
+      setvectorvector(MooseFunctorName);
       setvectorvector(MaterialName);
       setvectorvector(DistributionName);
       setvectorvector(SamplerName);

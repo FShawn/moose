@@ -16,6 +16,7 @@
     method = "!dbg"
     requirement = 'The system shall be able to model free-slip conditions in a channel; specifically the tangential velocity shall have a uniform value of unity, the normal velocity shall have a uniform value of zero, and the pressure shall not change.'
     ad_indexing_type = 'global'
+    valgrind = HEAVY
   []
   [no-slip]
     type = 'Exodiff'
@@ -26,6 +27,7 @@
     abs_zero = 1e-9
     ad_indexing_type = 'global'
     cli_args = '-pc_type lu -pc_factor_shift_type NONZERO'
+    valgrind = HEAVY
   []
   [scalar-transport]
     type = 'Exodiff'
@@ -36,6 +38,7 @@
     ad_indexing_type = 'global'
     design = 'INSFVScalarFieldAdvection.md'
     issues = '#16732'
+    valgrind = HEAVY
   []
   [momentum-outflow-bcs]
     type = 'Exodiff'
@@ -46,6 +49,7 @@
     issues = '#16854'
     ad_indexing_type = 'global'
     abs_zero = 2e-9
+    valgrind = HEAVY
   []
   [extrapolated-outlet-pressure]
     type = 'Exodiff'
@@ -56,6 +60,7 @@
     issues = '#16854'
     ad_indexing_type = 'global'
     abs_zero = 6e-9
+    valgrind = HEAVY
     cli_args = '-pc_type lu -sub_pc_factor_shift_type NONZERO'
   []
   [mixing-length]
@@ -75,7 +80,7 @@
     requirement = 'The system shall be able to model linear volumetric friction in a channel.'
     issues = '#16872'
     ad_indexing_type = 'global'
-    design = 'NSFVMomentumFriction.md'
+    design = 'INSFVMomentumFriction.md'
   []
   [quadratic-friction]
     type = 'Exodiff'
@@ -85,12 +90,12 @@
     issues = '#16872'
     ad_indexing_type = 'global'
     cli_args = "Outputs/file_base='2d-rc-friction-quad_out' FVKernels/inactive='u_friction_linear v_friction_linear'"
-    design = 'NSFVMomentumFriction.md'
+    design = 'INSFVMomentumFriction.md'
   []
   [ambient-convection]
-    type = 'Exodiff'
+    type = 'CSVDiff'
     input = 2d-rc-ambient-convection.i
-    exodiff = 2d-rc-ambient-convection_out.e
+    csvdiff = 2d-rc-ambient-convection_out.csv
     requirement = 'The system shall be able to model ambient volumetric convection in a channel.'
     issues = '#16948'
     ad_indexing_type = 'global'
@@ -106,6 +111,7 @@
       exodiff = 2d-rc-no-slip-tris.e
       cli_args = 'Mesh/gen/elem_type=TRI3 GlobalParams/two_term_boundary_expansion=false Outputs/file_base=2d-rc-no-slip-tris'
       ad_indexing_type = 'global'
+      valgrind = HEAVY
       detail = 'two-dimensional triangular elements'
     []
     [tets]
@@ -125,5 +131,13 @@
     method = "!dbg"
     requirement = 'The system shall be able to model free-slip conditions in a 3D square channel; specifically the tangential velocity shall have a uniform value of unity and the pressure shall not change.'
     ad_indexing_type = 'global'
+  []
+  [singular_two_term_expansion]
+    type = 'Exodiff'
+    input = one-elem-wide-channel.i
+    ad_indexing_type = 'global'
+    exodiff = one-elem-wide-channel_out.e
+    issues = '#16822'
+    requirement = 'The system shall be able to compute gradients, when extrapolated boundary face values make the gradient computation singular, by catching the singularity error and re-running without doing boundary face value extrapolation.'
   []
 []

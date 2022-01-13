@@ -182,16 +182,16 @@ class Executioner(mixins.ConfigObject, mixins.TranslatorObject):
     def __init__(self, **kwargs):
         mixins.ConfigObject.__init__(self, **kwargs)
         mixins.TranslatorObject.__init__(self)
-        self._page_objects = list()
+        self._page_objects = dict()
         self._total_time = 0
         self._clear_progress()
 
         # The method for spawning processes changed to "spawn" for macOS in python 3.9. Currently,
-        # MooseDocs does not work with this combination. This will be fixed in moosetools migration.
+        # MooseDocs does not work with this combination.
         if (platform.python_version() >= '3.9') and (platform.system() == 'Darwin'):
             self._ctx = multiprocessing.get_context('fork')
         else:
-            self._ctx = multiprocessing
+            self._ctx = multiprocessing.get_context()
 
         # A lock used prior to caching items or during directory creation to prevent race conditions
         self._lock = self._ctx.Lock()
@@ -205,11 +205,8 @@ class Executioner(mixins.ConfigObject, mixins.TranslatorObject):
         self._page_result = dict()
         self._global_attributes = dict()
 
-    def init(self, nodes):
+    def initPages(self, nodes):
         """Initialize the Page objects."""
-
-        # Call Extension init() method
-        self.translator.executeMethod('init')
 
         # Initialize Page objects
         for node in nodes:
@@ -226,11 +223,11 @@ class Executioner(mixins.ConfigObject, mixins.TranslatorObject):
 
     def addPage(self, page):
         """Add a Page object to be Translated."""
-        self._page_objects.append(page)
+        self._page_objects[page.uid] = page
 
     def getPages(self):
         """Return a list of Page objects."""
-        return self._page_objects
+        return self._page_objects.values()
 
     def setGlobalAttribute(self, key, value):
         """Set a global attribute to be communicated across processors."""
@@ -404,9 +401,7 @@ class Executioner(mixins.ConfigObject, mixins.TranslatorObject):
 
     def _getPage(self, uid):
         """Retrieve a Page object from the global list by its UID."""
-        for page in self._page_objects:
-            if uid == page.uid:
-                return page
+        return self._page_objects[uid]
 
 class Serial(Executioner):
     """Simple serial Executioner, this is useful for debugging or for very small builds."""

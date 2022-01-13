@@ -48,6 +48,7 @@ class TestBuild(unittest.TestCase):
         kwargs.setdefault('files', [])
         kwargs.setdefault('home', None)
         kwargs.setdefault('stable', False)
+        kwargs.setdefault('hide_source', False)
         return types.SimpleNamespace(**kwargs)
 
     # Note: mock.patch.object() decorators are applied from the bottom upwards
@@ -133,10 +134,6 @@ class TestBuild(unittest.TestCase):
             _, conts, _ = self._load_multiple_out
             init_mock.assert_any_call(conts[0])
             init_mock.assert_any_call(conts[1])
-            execute_mock.assert_any_call(conts[0], opt.num_threads, render=False, write=False)
-            execute_mock.assert_any_call(conts[1], opt.num_threads, render=False, write=False)
-            execute_mock.assert_any_call(conts[0], opt.num_threads, read=False, tokenize=False)
-            execute_mock.assert_any_call(conts[1], opt.num_threads, read=False, tokenize=False)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

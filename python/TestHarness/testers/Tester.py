@@ -53,6 +53,7 @@ class Tester(MooseObject):
         params.addParam('petsc_version', ['ALL'], "A list of petsc versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
         params.addParam('petsc_version_release', ['ALL'], "A test that runs against PETSc master if FALSE ('ALL', 'TRUE', 'FALSE')")
         params.addParam('slepc_version', [], "A list of slepc versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
+        params.addParam('exodus_version', ['ALL'], "A list of Exodus versions for which this test will run on, supports normal comparison operators ('<', '>', etc...)")
         params.addParam('mesh_mode',     ['ALL'], "A list of mesh modes for which this test will run ('DISTRIBUTED', 'REPLICATED')")
         params.addParam('min_ad_size',   None, "A minimum AD size for which this test will run")
         params.addParam('ad_mode',       ['ALL'], "A list of AD modes for which this test will run ('SPARSE', 'NONSPARSE')")
@@ -490,10 +491,8 @@ class Tester(MooseObject):
         # If we're testing with valgrind, then skip tests that require parallel or threads or don't meet the valgrind setting
         elif options.valgrind_mode != '':
             tmp_reason = ''
-            if self.specs['valgrind'].upper() == 'NONE':
-                tmp_reason = 'Valgrind==NONE'
-            elif self.specs['valgrind'].upper() == 'HEAVY' and options.valgrind_mode.upper() == 'NORMAL':
-                tmp_reason = 'Valgrind==HEAVY'
+            if self.specs['valgrind'].upper() != options.valgrind_mode.upper():
+                tmp_reason = 'Valgrind==' + self.specs['valgrind'].upper()
             elif int(self.specs['min_threads']) > 1:
                 tmp_reason = 'Valgrind requires non-threaded'
             elif self.specs["check_input"]:
@@ -522,6 +521,14 @@ class Tester(MooseObject):
                 reasons['slepc_version'] = 'using SLEPc ' + str(checks['slepc_version']) + ' REQ: ' + slepc_version
             elif slepc_version == None:
                 reasons['slepc_version'] = 'SLEPc is not installed'
+
+        # Check for ExodusII versions
+        (exodus_status, exodus_version) = util.checkExodusVersion(checks, self.specs)
+        if not exodus_status:
+            if checks['exodus_version'] != None:
+                reasons['exodus_version'] = 'using ExodusII ' + str(checks['exodus_version']) + ' REQ: ' + exodus_version
+            else:
+                reasons['exodus_version'] = 'Exodus version not detected. REQ: ' + exodus_version
 
         # PETSc and SLEPc is being explicitly checked above
         local_checks = ['platform', 'compiler', 'mesh_mode', 'ad_mode', 'ad_indexing_type', 'method', 'library_mode', 'dtk', 'unique_ids', 'vtk', 'tecplot',

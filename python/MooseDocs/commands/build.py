@@ -55,8 +55,8 @@ def command_line_options(subparser, parent):
                         help="Create a local live server.")
     parser.add_argument('--dump', action='store_true',
                         help="Show page tree to the screen.")
-    parser.add_argument('--num-threads', '-j', type=int, choices=range(1, 13),
-                        default=min(int(multiprocessing.cpu_count() / 2), 12),
+    parser.add_argument('--num-threads', '-j', type=int, choices=range(1,12),
+                        default=int(min(multiprocessing.cpu_count() / 2, 12)),
                         help="The number of parallel threads to execute with. The max. is twelve.")
     parser.add_argument('--port', default='8000', type=str,
                         help="The host port for live web server (default: %(default)s).")
@@ -77,6 +77,8 @@ def command_line_options(subparser, parent):
     parser.add_argument('--home', default=None, help="The 'home' URL for the hosted website. " \
                                                      "This is mainly used by CIVET to allow " \
                                                      "temporary sites to be functional.")
+    parser.add_argument('--hide-source', action='store_true',
+                        help="Shortcut for setting the 'hide_source' option in the modal extension.")
 
 class MooseDocsWatcher(livereload.watcher.Watcher):
     """
@@ -144,6 +146,7 @@ class MooseDocsWatcher(livereload.watcher.Watcher):
                     key = fname.replace(root, '').strip('/')
                     page = common.create_file_page(key, fname, self._primary.reader.EXTENSIONS)
                     self._primary.addPage(page)
+                    self._primary.initPage(page)
                     self._contents.append(page)
                     return page
         elif exists: # there is no way to know which translator should build the new content
@@ -182,6 +185,9 @@ def main(options):
     for name in options.disable:
         kwargs['Extensions'][name] = dict(active=False)
 
+    if options.hide_source:
+        kwargs['Extensions']['MooseDocs.extensions.modal']['hide_source'] = True
+
     # Apply Translator settings
     if options.destination:
         kwargs['Translator']['destination'] = mooseutils.eval_path(options.destination)
@@ -203,6 +209,9 @@ def main(options):
         if subconfigs:
             LOG.info('Initializing translator object loaded from %s', config_files[index])
         translator.init(contents[index])
+
+        # init methods can add pages (e.g., civet.py), but don't add pages from another translator
+        contents[index] = [page for page in translator.getPages() if page.translator is translator]
 
     # Identify the first translator in the list as the "primary" one for convenience
     primary = translators[0]
@@ -255,13 +264,13 @@ def main(options):
     for index, translator in enumerate(translators):
         if subconfigs:
             LOG.info('Reading content specified by %s', config_files[index])
-        translator.execute(contents[index], options.num_threads, render=False, write=False)
+        translator.execute(contents[index], num_threads=options.num_threads, render=False, write=False)
 
     # Finally, execute the render and write methods
     for index, translator in enumerate(translators):
         if subconfigs:
             LOG.info('Writing content specified by %s', config_files[index])
-        translator.execute(contents[index], options.num_threads, read=False, tokenize=False)
+        translator.execute(contents[index], num_threads=options.num_threads, read=False, tokenize=False)
 
     LOG.info('Total Time [%s sec.]', time.time() - t)
 

@@ -51,8 +51,8 @@ name = 'finite'
   [block_rename]
     type = RenameBlockGenerator
     input = combined
-    old_block_id = '1 2'
-    new_block_name = 'plank block'
+    old_block = '1 2'
+    new_block = 'plank block'
   []
 []
 
@@ -84,7 +84,6 @@ name = 'finite'
 
 [Contact]
   [frictionless]
-    mesh = block_rename
     primary = plank_right
     secondary = block_left
     formulation = mortar

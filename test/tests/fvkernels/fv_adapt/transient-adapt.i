@@ -80,7 +80,7 @@
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []
@@ -91,10 +91,6 @@
   num_steps = 2
   dt = 1
   solve_type = 'NEWTON'
-[]
-
-[Problem]
-  kernel_coverage_check = false
 []
 
 [Adaptivity]

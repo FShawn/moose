@@ -21,6 +21,11 @@
   []
 []
 
+[GlobalParams]
+  # retain behavior at time of test creation
+  two_term_boundary_expansion = false
+[]
+
 [Variables]
   [u]
     type = MooseVariableFVReal
@@ -85,13 +90,13 @@
 
 [Materials]
   [block0]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     block = '0'
     prop_names = 'left'
     prop_values = '1'
   []
   [block1]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     block = '1'
     prop_names = 'right'
     prop_values = '1'

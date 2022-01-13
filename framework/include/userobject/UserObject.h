@@ -25,6 +25,7 @@
 #include "SetupInterface.h"
 #include "PerfGraphInterface.h"
 #include "SamplerInterface.h"
+#include "FunctorInterface.h"
 
 #include "libmesh/parallel.h"
 
@@ -53,7 +54,8 @@ class UserObject : public MooseObject,
                    protected MeshMetaDataInterface,
                    protected MeshChangedInterface,
                    protected ScalarCoupleable,
-                   protected PerfGraphInterface
+                   protected PerfGraphInterface,
+                   protected FunctorInterface
 {
 public:
   static InputParameters validParams();
@@ -100,6 +102,17 @@ public:
   }
 
   /**
+   * Optional interface function for providing the points at which a UserObject attains
+   * spatial values. If a UserObject overrides this function, then other objects that
+   * take both the UserObject and points can instead directly use the points specified
+   * on the UserObject.
+   */
+  virtual const std::vector<Point> spatialPoints() const
+  {
+    mooseError("Spatial UserObject interface is not satisfied; spatialPoints() must be overridden");
+  }
+
+  /**
    * Must override.
    *
    * @param uo The UserObject to be joined into _this_ object.  Take the data from the uo object and
@@ -143,8 +156,23 @@ public:
     _communicator.min(value);
   }
 
+  /**
+   * Gather the parallel value of a variable according to which process has the parallel
+   * maximum of the provided value.
+   * @param[in] value process with maximum value will be selected
+   * @param[in] proxy value to be obtained on process with maximum value
+   */
   template <typename T1, typename T2>
   void gatherProxyValueMax(T1 & value, T2 & proxy);
+
+  /**
+   * Gather the parallel value of a variable according to which process has the parallel
+   * minimum of the provided value.
+   * @param[in] value process with minimum value will be selected
+   * @param[in] proxy value to be obtained on process with minimum value
+   */
+  template <typename T1, typename T2>
+  void gatherProxyValueMin(T1 & value, T2 & proxy);
 
   void setPrimaryThreadCopy(UserObject * primary);
 
@@ -197,7 +225,16 @@ template <typename T1, typename T2>
 void
 UserObject::gatherProxyValueMax(T1 & value, T2 & proxy)
 {
-  unsigned int rank;
+  processor_id_type rank;
   _communicator.maxloc(value, rank);
+  _communicator.broadcast(proxy, rank);
+}
+
+template <typename T1, typename T2>
+void
+UserObject::gatherProxyValueMin(T1 & value, T2 & proxy)
+{
+  processor_id_type rank;
+  _communicator.minloc(value, rank);
   _communicator.broadcast(proxy, rank);
 }

@@ -17,6 +17,18 @@ collaborators throughout the world.
 
 !sqa records
 
+## SQA Training
+
+Members of the [!ac](CCB) of MOOSE or MOOSE-based application must complete [!ac](INL) training course
+RDHERD01.
+
+- [Introduction to MOOSE and MOOSE-based Application development processes (RDHERD01)](sqa/training/ccb/index.md)
+
+The project lead and software quality lead for MOOSE or MOOSE-based application(s) must complete [!ac](INL) training
+course 0INL1862.
+
+- [MOOSE and MOOSE-Based Applications Project Lead and SQA Lead Training (0INL1862)](sqa/training/lead/index.md)
+
 ## Test Results and Releases
 
 MOOSE employs a continuous integration strategy using [!ac](CIVET); the testing results for
@@ -26,7 +38,13 @@ this version of the documentation is available at the following links:
 
 The documentation for the SQA releases can be found using the following links:
 
+- [2021-09-15](https://mooseframework.org/releases/moose/2021-09-15)
 - [2021-05-18](https://mooseframework.org/releases/moose/2021-05-18)
 - [v1.0.0](https://mooseframework.org/releases/moose/v1.0.0)
 
+## Github Backups
+
+[Information on Github Backups for MOOSE, Mastodon, TMAP8, and blackbear](sqa/github_backup.md)
+
 !sqa report
+

@@ -69,9 +69,10 @@ AddVariableAction::AddVariableAction(InputParameters params)
 MooseEnum
 AddVariableAction::getNonlinearVariableFamilies()
 {
-  return MooseEnum("LAGRANGE MONOMIAL HERMITE SCALAR HIERARCHIC CLOUGH XYZ SZABAB BERNSTEIN "
-                   "L2_LAGRANGE L2_HIERARCHIC NEDELEC_ONE LAGRANGE_VEC MONOMIAL_VEC",
-                   "LAGRANGE");
+  return MooseEnum(
+      "LAGRANGE MONOMIAL HERMITE SCALAR HIERARCHIC CLOUGH XYZ SZABAB BERNSTEIN "
+      "L2_LAGRANGE L2_HIERARCHIC NEDELEC_ONE LAGRANGE_VEC MONOMIAL_VEC RATIONAL_BERNSTEIN",
+      "LAGRANGE");
 }
 
 MooseEnum
@@ -131,9 +132,10 @@ AddVariableAction::init()
   _moose_object_pars.applySpecificParameters(_pars, {"order", "family", "scaling"});
 
   // Determine the MooseVariable type
-  bool is_fv = _moose_object_pars.get<bool>("fv");
+  const auto is_fv = _moose_object_pars.get<bool>("fv");
+  const auto is_array = _components > 1 || _moose_object_pars.get<bool>("array");
   if (_type == "MooseVariableBase")
-    _type = determineType(_fe_type, _components, is_fv);
+    _type = variableType(_fe_type, is_fv, is_array);
   if (is_fv)
     _problem->needFV();
 
@@ -224,10 +226,18 @@ AddVariableAction::createInitialConditionAction()
 std::string
 AddVariableAction::determineType(const FEType & fe_type, unsigned int components, bool is_fv)
 {
+  mooseDeprecated("AddVariableAction::determineType() is deprecated. Use "
+                  "AddVariableAction::variableType() instead.");
+  return variableType(fe_type, is_fv, components > 1);
+}
+
+std::string
+AddVariableAction::variableType(const FEType & fe_type, const bool is_fv, const bool is_array)
+{
   if (is_fv)
     return "MooseVariableFVReal";
 
-  if (components > 1)
+  if (is_array)
   {
     if (fe_type.family == LAGRANGE_VEC || fe_type.family == NEDELEC_ONE ||
         fe_type.family == MONOMIAL_VEC)

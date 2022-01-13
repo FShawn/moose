@@ -8,6 +8,8 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "MooseVariableBase.h"
+
+#include "AddVariableAction.h"
 #include "SubProblem.h"
 #include "SystemBase.h"
 #include "MooseMesh.h"
@@ -46,9 +48,8 @@ MooseVariableBase::validParams()
                              "Order of the FE shape function to use for this variable (additional "
                              "orders not listed here are allowed, depending on the family).");
 
-  MooseEnum family("LAGRANGE MONOMIAL HERMITE SCALAR HIERARCHIC CLOUGH XYZ SZABAB BERNSTEIN "
-                   "L2_LAGRANGE L2_HIERARCHIC NEDELEC_ONE LAGRANGE_VEC MONOMIAL_VEC",
-                   "LAGRANGE");
+  MooseEnum family{AddVariableAction::getNonlinearVariableFamilies()};
+
   params.addParam<MooseEnum>(
       "family", family, "Specifies the family of FE shape functions to use for this variable.");
 
@@ -61,6 +62,10 @@ MooseVariableBase::validParams()
                                      "Specifies a scaling factor to apply to this variable");
   params.addParam<bool>("eigen", false, "True to make this variable an eigen variable");
   params.addParam<bool>("fv", false, "True to make this variable a finite volume variable");
+  params.addParam<bool>("array",
+                        false,
+                        "True to make this variable a array variable regardless of number of "
+                        "components. If 'components' > 1, this will automatically be set to true.");
   params.addParamNamesToGroup("scaling eigen", "Advanced");
 
   params.addParam<bool>("use_dual", false, "True to use dual basis for Lagrange multipliers");
@@ -106,8 +111,10 @@ MooseVariableBase::MooseVariableBase(const InputParameters & parameters)
     paramError("family", "finite volume (fv=true) variables must be have MONOMIAL family");
   if (getParam<bool>("fv") && _fe_type.order != 0)
     paramError("order", "finite volume (fv=true) variables currently support CONST order only");
-
+  bool is_array = getParam<bool>("array");
   if (_count > 1)
+    mooseAssert(is_array, "Must be true with component > 1");
+  if (is_array)
   {
     auto name0 = _sys.system().variable(_var_num).name();
     std::size_t found = name0.find_last_of("_");
@@ -116,7 +123,10 @@ MooseVariableBase::MooseVariableBase(const InputParameters & parameters)
     _var_name = name0.substr(0, found);
   }
   else
+  {
+    mooseAssert(_count == 1, "component size of normal variable (_count) must be one");
     _var_name = _sys.system().variable(_var_num).name();
+  }
 }
 
 const std::vector<dof_id_type> &

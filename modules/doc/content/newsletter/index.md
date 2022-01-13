@@ -7,6 +7,13 @@ provided below.
 
 ## 2021
 
+- [December, 2021](2021_12.md)
+- [November, 2021](2021_11.md)
+- [October, 2021](2021_10.md)
+- [September, 2021](2021_09.md)
+- [August, 2021](2021_08.md)
+- [July, 2021](2021_07.md)
+- [June, 2021](2021_06.md)
 - [May, 2021](2021_05.md)
 - [April, 2021](2021_04.md)
 - [March, 2021](2021_03.md)

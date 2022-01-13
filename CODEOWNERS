@@ -1,4 +1,4 @@
-/conda @loganharbour @milljm
+/conda @loganharbour @milljm @cticenhour
 /docker_ci @loganharbour
 /m4 @lindsayad
 
@@ -7,56 +7,50 @@
 /LICENSE @permcody
 /README.md @permcody
 
+/.coverage @loganharbour @permcody
 /.gitmodules @permcody
 /aclocal.m4 @lindsayad
 /conf_vars.mk.in @lindsayad
 /configure @lindsayad
 /configure.ac @lindsayad
-/package_version @milljm
 
 /.github @permcody
 
-/framework/*/constraints @lindsayad
 /framework/*/dgkernels @lindsayad
 /framework/*/executioners/*Solve* @GiudGiud
-/framework/*/fv* @rwcarlsen @lindsayad
+/framework/*/fv* @lindsayad
 /framework/*/interfacekernels @lindsayad
-/framework/*/interfaces @lindsayad
 /framework/*/linesearches @lindsayad
-/framework/*/loops @lindsayad
-/framework/*/materials @rwcarlsen
 /framework/*/materials/Derivative* @dschwen
 /framework/*/materials/Parsed* @dschwen
-/framework/*/nodalkernels @lindsayad
-/framework/*/parser @rwcarlsen
 /framework/*/preconditioners @fdkong
-/framework/*/problems @lindsayad
 /framework/*/problems/EigenProblem* @fdkong
 /framework/*/relationshipmanagers @lindsayad
-/framework/*/reporters @aeslaughter
-/framework/*/samplers @aeslaughter @zachmprince
-/framework/*/systems @lindsayad
+/framework/*/reporters @loganharbour @zachmprince
+/framework/*/samplers @zachmprince
 /framework/*/systems/NonlinearEigenSystem* @fdkong
 /framework/*/transfers @fdkong
 /framework/*/utils/PetscSupport* @fdkong
 /framework/*/utils/SlepcSupport* @fdkong
 /framework/*/utils/Units* @dschwen
-/framework/*/variables @rwcarlsen
 
 /modules/contact @bwspenc @lindsayad
+/modules/doc/content/getting_started/installation @milljm @loganharbour @cticenhour
+/modules/doc/content/newsletter @cticenhour
 /modules/electromagnetics @cticenhour
 /modules/external_petsc_solver @fdkong
-/modules/fluid_properties @rwcarlsen @andrsd
+/modules/fluid_properties @andrsd
 /modules/fsi @fdkong
 /modules/functional_expansion_tools @lindsayad
 /modules/navier_stokes @lindsayad @GiudGiud
 /modules/phase_field @dschwen
 /modules/ray_tracing @loganharbour
 /modules/rdg @joshuahansel
-/modules/stochastic_tools @aeslaughter @zachmprince
+/modules/stochastic_tools @zachmprince
 /modules/tensor_mechanics @bwspenc @dschwen @jiangwen84
 /modules/xfem @bwspenc @jiangwen84
 
 /scripts/hpc_proxy.pac @loganharbour
+/scripts/configure_petsc.sh @fdkong
 /scripts/update_and_rebuild_petsc.sh @fdkong
 /scripts/update_and_rebuild_petsc_alt.sh @fdkong

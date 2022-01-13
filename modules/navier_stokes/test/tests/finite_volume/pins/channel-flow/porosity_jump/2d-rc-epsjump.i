@@ -15,10 +15,6 @@ velocity_interp_method='rc'
   []
 []
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Variables]
   [u]
     type = PINSFVSuperficialVelocityVariable
@@ -35,9 +31,7 @@ velocity_interp_method='rc'
 
 [AuxVariables]
   [porosity]
-    family = MONOMIAL
-    order = CONSTANT
-    fv = true
+    type = MooseVariableFVReal
   []
 []
 
@@ -107,7 +101,7 @@ velocity_interp_method='rc'
     porosity = porosity
 
     momentum_component = 'x'
-    vel = 'velocity'
+    superficial_velocity = 'velocity'
   []
   [u_pressure]
     type = PINSFVMomentumPressure
@@ -147,7 +141,7 @@ velocity_interp_method='rc'
     porosity = porosity
 
     momentum_component = 'y'
-    vel = 'velocity'
+    superficial_velocity = 'velocity'
   []
   [v_pressure]
     type = PINSFVMomentumPressure

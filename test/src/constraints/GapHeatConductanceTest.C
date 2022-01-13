@@ -35,8 +35,8 @@ GapHeatConductanceTest::GapHeatConductanceTest(const InputParameters & parameter
   : ADMortarConstraint(parameters),
     _secondary_gap_conductance(getADMaterialProperty<Real>("secondary_gap_conductance")),
     _primary_gap_conductance(getNeighborADMaterialProperty<Real>("primary_gap_conductance")),
-    _secondary_mms_function(getFunction("secondary_mms_function")),
-    _primary_mms_function(getFunction("primary_mms_function"))
+    _secondary_mms_function(getFunction<Real>("secondary_mms_function")),
+    _primary_mms_function(getFunctionByName<Real>(getParam<FunctionName>("primary_mms_function")))
 {
 }
 
@@ -56,18 +56,15 @@ GapHeatConductanceTest::computeQpResidual(Moose::MortarType type)
     case Moose::MortarType::Lower:
     {
       ADReal heat_transfer_coeff(0);
-      if (_has_primary)
-      {
-        auto gap = (_phys_points_secondary[_qp] - _phys_points_primary[_qp]).norm();
-        mooseAssert(MetaPhysicL::raw_value(gap) > TOLERANCE * TOLERANCE,
-                    "Gap distance is too small in GapHeatConductanceTest");
+      auto gap = (_phys_points_secondary[_qp] - _phys_points_primary[_qp]).norm();
+      mooseAssert(MetaPhysicL::raw_value(gap) > TOLERANCE * TOLERANCE,
+                  "Gap distance is too small in GapHeatConductanceTest");
 
-        heat_transfer_coeff =
-            (0.5 * (_secondary_gap_conductance[_qp] + _primary_gap_conductance[_qp])) / gap;
-      }
+      heat_transfer_coeff =
+          (0.5 * (_secondary_gap_conductance[_qp] + _primary_gap_conductance[_qp])) / gap;
+
       return _test[_i][_qp] *
-             (_lambda[_qp] -
-              heat_transfer_coeff * (_u_secondary[_qp] - (_has_primary ? _u_primary[_qp] : 0)));
+             (_lambda[_qp] - heat_transfer_coeff * (_u_secondary[_qp] - _u_primary[_qp]));
     }
 
     default:

@@ -13,7 +13,6 @@
 #include "MooseTypes.h"
 #include "MooseEnum.h"
 
-/// Enum used to select contact model type
 enum class ContactModel
 {
   FRICTIONLESS,
@@ -21,7 +20,6 @@ enum class ContactModel
   COULOMB,
 };
 
-/// Enum used to select contact formulation
 enum class ContactFormulation
 {
   RANFS,
@@ -36,7 +34,6 @@ enum class ContactFormulation
  * Action class for creating constraints, kernels, and user objects necessary for mechanical
  * contact.
  */
-
 class ContactAction : public Action
 {
 public:
@@ -54,26 +51,31 @@ public:
    * @return enum
    */
   static MooseEnum getModelEnum();
+
   /**
    * Get mortar approach
    * @return enum
    */
   static MooseEnum getMortarApproach();
+
   /**
    * Get contact formulation
    * @return enum
    */
+
   static MooseEnum getFormulationEnum();
   /**
    * Get contact system
    * @return enum
    */
   static MooseEnum getSystemEnum();
+
   /**
    * Get smoothing type
    * @return enum
    */
   static MooseEnum getSmoothingEnum();
+
   /**
    * Define parameters used by multiple contact objects
    * @return InputParameters object populated with common parameters
@@ -81,27 +83,23 @@ public:
   static InputParameters commonParameters();
 
 protected:
-  /// Primary boundary names for mechanical contact
-  const std::vector<BoundaryName> _primary;
-  /// Secondary boundary names for mechanical contact
-  const std::vector<BoundaryName> _secondary;
+  /// Primary/Secondary boundary name pairs for mechanical contact
+  const std::vector<std::pair<BoundaryName, BoundaryName>> _boundary_pairs;
+
   /// Contact model type enum
-  const MooseEnum _model;
-  /// Contact formulation type enum
-  const MooseEnum _formulation;
-  /// Mesh generator name for Mortar contact formulation
-  const MeshGeneratorName _mesh_gen_name;
+  const ContactModel _model;
+
+  /// Contact formulation
+  const ContactFormulation _formulation;
+
   /// Mortar approach (weighted --variationally consistent-- or legacy)
-  enum class MortarApproach
-  {
-    Weighted,
-    Legacy
-  };
-  const MortarApproach _mortar_approach;
+  const enum class MortarApproach { Weighted, Legacy } _mortar_approach;
+
   /// Whether to use the dual Mortar approach
   bool _use_dual;
-  /// Number of contact pairs on which to enable mechanical contact
-  const unsigned int _number_pairs;
+
+  /// Whether to use correct edge dropping treatment
+  const bool _correct_edge_dropping;
 
 private:
   /**

@@ -21,6 +21,7 @@ from ..tree import tokens
 
 LOG = logging.getLogger(__name__)
 
+TemplateContent = tokens.newToken('TemplateContent', kwargs=None)
 TemplateItem = tokens.newToken('TemplateItem', key='')
 TemplateField = tokens.newToken('TemplateField', key='', required=True)
 
@@ -94,18 +95,25 @@ class TemplateLoadCommand(command.CommandComponent):
         settings['file'] = (None, "The filename of the template to load.")
         return settings
 
-    def createToken(self, parent, info, page):
+    def createToken(self, parent, info, page, settings):
         settings, t_args = common.match_settings(self.defaultSettings(), info['settings'])
 
         location = self.translator.findPage(settings['file'])
         page['dependencies'].add(location.uid)
 
-        kwargs = self.extension.getConfig(page, 'args')
-        kwargs.update(t_args)
+        # It is possible to have nested load functions. This ensures that the arguments passed at the
+        # top level over ride the ones lower down
+        if parent.name == 'TemplateContent':
+            kwargs = t_args
+            kwargs.update(parent['kwargs'])
+        else:
+            kwargs = self.extension.getConfig(page, 'args')
+            kwargs.update(t_args)
 
+        token = TemplateContent(parent, kwargs=kwargs)
         content = common.read(location.source)
         content = mooseutils.apply_template_arguments(content, **kwargs)
-        self.reader.tokenize(parent, content, page, line=info.line)
+        self.reader.tokenize(token, content, page, line=info.line)
         return parent
 
 class TemplateFieldCommand(command.CommandComponent):
@@ -119,8 +127,8 @@ class TemplateFieldCommand(command.CommandComponent):
         settings['required'] = (True, "The section is required.")
         return settings
 
-    def createToken(self, parent, info, page):
-        return TemplateField(parent, key=self.settings['key'], required=self.settings['required'])
+    def createToken(self, parent, info, page, settings):
+        return TemplateField(parent, key=settings['key'], required=settings['required'])
 
 class TemplateItemCommand(command.CommandComponent):
     COMMAND = 'template'
@@ -132,8 +140,8 @@ class TemplateItemCommand(command.CommandComponent):
         config['key'] = (None, "The name of the template item which the content is to replace.")
         return config
 
-    def createToken(self, parent, info, page):
-        item = TemplateItem(parent, key=self.settings['key'])
+    def createToken(self, parent, info, page, settings):
+        item = TemplateItem(parent, key=settings['key'])
         group = MarkdownReader.INLINE if MarkdownReader.INLINE in info else MarkdownReader.BLOCK
         kwargs = self.extension.getConfig(page, 'args')
         content = mooseutils.apply_template_arguments(info[group], **kwargs)

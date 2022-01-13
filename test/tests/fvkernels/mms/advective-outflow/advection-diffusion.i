@@ -15,10 +15,6 @@ a=1
   [../]
 []
 
-[Problem]
-  kernel_coverage_check = off
-[]
-
 [Variables]
   [./v]
     family = MONOMIAL
@@ -57,7 +53,7 @@ a=1
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '${diff}'
   []

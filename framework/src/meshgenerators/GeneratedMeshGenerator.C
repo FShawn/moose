@@ -52,6 +52,8 @@ GeneratedMeshGenerator::validParams()
                              "The type of element from libMesh to "
                              "generate (default: linear element for "
                              "requested dimension)");
+  params.addParam<std::vector<SubdomainID>>("subdomain_ids", "Subdomain IDs, default to all zero");
+
   params.addParam<bool>(
       "gauss_lobatto_grid",
       false,
@@ -100,6 +102,7 @@ GeneratedMeshGenerator::GeneratedMeshGenerator(const InputParameters & parameter
     _ymax(declareMeshProperty("ymax", getParam<Real>("ymax"))),
     _zmin(declareMeshProperty("zmin", getParam<Real>("zmin"))),
     _zmax(declareMeshProperty("zmax", getParam<Real>("zmax"))),
+    _has_subdomain_ids(isParamValid("subdomain_ids")),
     _gauss_lobatto_grid(getParam<bool>("gauss_lobatto_grid")),
     _bias_x(getParam<Real>("bias_x")),
     _bias_y(getParam<Real>("bias_y")),
@@ -186,6 +189,23 @@ GeneratedMeshGenerator::generate()
       break;
   }
 
+  if (_has_subdomain_ids)
+  {
+    auto & bids = getParam<std::vector<SubdomainID>>("subdomain_ids");
+    if (bids.size() != _nx * _ny * _nz)
+      paramError("subdomain_ids",
+                 "Size must equal to the product of number of elements in all directions");
+    for (auto & elem : mesh->element_ptr_range())
+    {
+      const Point p = elem->vertex_average();
+      unsigned int ix = std::floor((p(0) - _xmin) / (_xmax - _xmin) * _nx);
+      unsigned int iy = std::floor((p(1) - _ymin) / (_ymax - _ymin) * _ny);
+      unsigned int iz = std::floor((p(2) - _zmin) / (_zmax - _zmin) * _nz);
+      unsigned int i = iz * _nx * _ny + iy * _nx + ix;
+      elem->subdomain_id() = bids[i];
+    }
+  }
+
   // rename and shift boundaries
   BoundaryInfo & boundary_info = mesh->get_boundary_info();
   const auto & mesh_boundary_ids = boundary_info.get_boundary_ids();
@@ -224,8 +244,9 @@ GeneratedMeshGenerator::generate()
     for (unsigned int dir = 0; dir < LIBMESH_DIM; ++dir)
     {
       pows[dir].resize(nelem[dir] + 1);
-      for (unsigned int i = 0; i < pows[dir].size(); ++i)
-        pows[dir][i] = std::pow(bias[dir], static_cast<int>(i));
+      pows[dir][0] = 1.0;
+      for (unsigned int i = 1; i < pows[dir].size(); ++i)
+        pows[dir][i] = pows[dir][i - 1] * bias[dir];
     }
 
     // Loop over the nodes and move them to the desired location

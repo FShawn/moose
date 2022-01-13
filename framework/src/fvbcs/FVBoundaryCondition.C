@@ -31,6 +31,7 @@ FVBoundaryCondition::validParams()
   params += TransientInterface::validParams();
   params += BoundaryRestrictableRequired::validParams();
   params += TaggingInterface::validParams();
+  params += FunctorInterface::validParams();
 
   params.addRequiredParam<NonlinearVariableName>(
       "variable", "The name of the variable that this boundary condition applies to");
@@ -67,6 +68,7 @@ FVBoundaryCondition::FVBoundaryCondition(const InputParameters & parameters)
                                  "variable",
                                  Moose::VarKindType::VAR_ANY,
                                  Moose::VarFieldType::VAR_FIELD_STANDARD),
+    FunctorInterface(this),
     _var(*mooseVariableFV()),
     _subproblem(*getCheckedPointerParam<SubProblem *>("_subproblem")),
     _fe_problem(*getCheckedPointerParam<FEProblemBase *>("_fe_problem_base")),
@@ -80,4 +82,18 @@ FVBoundaryCondition::FVBoundaryCondition(const InputParameters & parameters)
 
   if (getParam<bool>("use_displaced_mesh"))
     paramError("use_displaced_mesh", "FV boundary conditions do not yet support displaced mesh");
+}
+
+std::tuple<const FaceInfo *, Moose::FV::LimiterType, bool, SubdomainID>
+FVBoundaryCondition::singleSidedFaceArg(const FaceInfo * fi,
+                                        Moose::FV::LimiterType limiter_type) const
+{
+  if (!fi)
+    fi = _face_info;
+  const bool use_elem = fi->faceType(_var.name()) == FaceInfo::VarFaceNeighbors::ELEM;
+
+  if (use_elem)
+    return std::make_tuple(fi, limiter_type, true, fi->elem().subdomain_id());
+  else
+    return std::make_tuple(fi, limiter_type, true, fi->neighborPtr()->subdomain_id());
 }

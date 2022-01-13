@@ -48,7 +48,7 @@ template `FEGenericBase<T>` implements the type dependent methods analogous to
 `MooseVariableFE<T>` implements methods that return the variable's solution
 and its associated shape functions. Additionally, it contains the methods
 responsible for computing the variable solution at quadrature points given the
-degree of freedom values computed from the previous non-linear
+degree of freedom values computed from the previous nonlinear
 solution. "Standard" or "traditional" finite element variables that are
 single-component are instantiated with the template argument `Real`; these hold
 variables of finite element families `LAGRANGE`, `MONOMIAL`, `HERMITE`,
@@ -167,6 +167,35 @@ gradient. Some of these methods are exemplified below:
 - `coupledCurl`: takes a variable name (should correspond to a
   +multi-component+ `VectorMooseVariable`) and returns the curl of the finite element solution
   at the quadrature points (`VectorVariableCurl`)
+
+
+### Variable functor evaluation id=functor-vars
+
+Derived field classes of `MooseVariableBase`, e.g. derivatives of the class
+template `MooseVariableField<T>` inherit from the
+`Moose::Functor`. Quadrature-based overloads of the `evaluate` method are
+implemented in `MooseVariableField<T>`. The `ElemQpArg` and `ElemSideQpArg` `evaluate` overloads do
+true on-the-fly computation of the solution based on the information contained
+within the argument, e.g. they perform calls to libMesh `FE::reinit` methods
+after attaching the quadrature rule provided withing the calling argument. The
+`ElementType` overload, however, simply queries methods like `adSln()`,
+`slnOld()`, `slnOlder()`, `adSlnNeighbor()`, and `slnOldNeighbor()`. The success
+of this latter overload depends on the fact that the variable has already been
+reinit'd on the requested element or neighbor type. If a user is unsure whether
+this precondition will be met, then they should call the likely slower but more
+flexible `ElemQpArg` overload. For an overview of the different spatial
+overloads available for functors, please see [Materials/index.md#spatial-overloads].
+
+Finite-volume-centric `evaluate` overloads are individually implemented in
+`MooseVariableFE<T>` and `MooseVariableFV<T>` class templates. The finite
+element "implementations" currently just error out at run-time if called, but
+these could be non-trivially implemented if on-the-fly evaluation of FE
+variables coupled into FV physics becomes important. `MooseVariableFV<T>`
+implementations of the finite-volume-centric `evaluate` overloads leverage
+pre-existing methods like `getExtrapolatedBoundaryFaceValue`,
+`getInternalFaceValue`, and `getDirichletBoundaryFaceValue` when called with
+face-like arguments, and `getElemValue` and `getNeighborValue` when called with
+element-like arguments.
 
 !syntax parameters /Variables/MooseVariableBase
 

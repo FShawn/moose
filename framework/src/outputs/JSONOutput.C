@@ -112,14 +112,17 @@ JSONOutput::outputReporters()
     auto & r_node = _json["reporters"]; // non-accidental insert
     for (const auto & r_name : r_names)
     {
+      // If this value is produced in root mode and we're not on root, don't report this value
+      const auto & context = _reporter_data.getReporterContextBase(r_name);
+      if (context.getProducerModeEnum() == REPORTER_MODE_ROOT && processor_id() != 0)
+        continue;
+
       // Create/get object node
       auto obj_node_pair = r_node.emplace(r_name.getObjectName(), nlohmann::json());
       auto & obj_node = *(obj_node_pair.first);
-      const auto & context = _reporter_data.getReporterContextBase(r_name);
 
-      // If this value is produced in root mode and we're not on root, don't report this value
-      if (context.getProducerModeEnum() == REPORTER_MODE_ROOT && processor_id() != 0)
-        continue;
+      // Whether or not we should store this Reporter's value or have it be null
+      bool should_store = true;
 
       // If the object node was created insert the class level information
       if (obj_node_pair.second)
@@ -140,10 +143,18 @@ JSONOutput::outputReporters()
         mooseAssert(objs.size() <= 1,
                     "Multiple Reporter objects with the same name located, how did you do that?");
 
-        // It is possible to have a Reporter value without a reporter objects (i.e., VPPs, PPs),
-        // which is why objs can be empty.
         if (!objs.empty())
-          objs.front()->store(obj_node);
+        {
+          auto & reporter = *objs.front();
+
+          // It is possible to have a Reporter value without a reporter objects (i.e., VPPs, PPs),
+          // which is why objs can be empty.
+          reporter.store(obj_node);
+
+          // GeneralReporters have the option to only store JSON data when the execute flag
+          // matches an execute flag that is within the GeneralReporter; this captures that
+          should_store = reporter.shouldStore();
+        }
       }
 
       // Create/get value node
@@ -155,7 +166,10 @@ JSONOutput::outputReporters()
 
       // Insert reporter value
       auto & node = current_node[r_name.getObjectName()][r_name.getValueName()];
-      context.store(node);
+      if (should_store)
+        context.store(node);
+      else
+        node = "null";
     }
   }
 }

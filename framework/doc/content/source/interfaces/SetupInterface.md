@@ -7,7 +7,7 @@ allow derived classes to perform setup applications prior to execution.
 
 ## Execute On
 
-Any object inheriting from the SetupInterface, that adds the `validParams<SetupInterface>` within its
+Any object inheriting from the SetupInterface, that adds the `SetupInterface::validParams()` within its
 own parameters, will have an "execute_on" parameter that can be set to various flags, the most common
 flags are listed below.
 
@@ -15,7 +15,7 @@ flags are listed below.
 | :- | :- |
 INITIAL | Prior to the first time step.
 TIMESTEP_BEGIN | Prior to the solve for each time step.
-NONLINEAR | Prior do each non-linear iteration during the solve.
+NONLINEAR | Prior do each nonlinear iteration during the solve.
 LINEAR | Prior do each linear iteration during the solve.
 TIMESTEP_END | After the solve for each time step.
 SUBDOMAIN | Executes when the subdomain (i.e., "blocks") change during calculations.

@@ -9,11 +9,11 @@
 
 #pragma once
 
-#include "FVDiffusion.h"
+#include "FVFluxKernel.h"
 
 /**
- * A flux kernel for diffusing energy in porous media across cell faces, using a regular
- * diffusion coefficient, which is multiplied by porosity
+ * A flux kernel for diffusing energy in porous media across cell faces, using a scalar
+ * isotropic diffusion coefficient, using functor material properties
  */
 class PINSFVEnergyDiffusion : public FVFluxKernel
 {
@@ -25,11 +25,9 @@ protected:
   ADReal computeQpResidual() override;
 
   /// the thermal conductivity
-  const ADMaterialProperty<Real> & _k_elem;
-  /// the neighbor element thermal conductivity
-  const ADMaterialProperty<Real> & _k_neighbor;
+  const Moose::Functor<ADReal> & _k;
   /// the porosity
-  const VariableValue & _eps;
-  /// the neighbor element porosity
-  const VariableValue & _eps_neighbor;
+  const Moose::Functor<ADReal> & _eps;
+  /// whether the diffusivity should be multiplied by porosity
+  const bool _porosity_factored_in;
 };

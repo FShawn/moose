@@ -32,9 +32,12 @@
 #include <map>
 #include <set>
 #include <unordered_set>
+#include <typeindex>
 
 // Forward declarations
 class Executioner;
+class Executor;
+class NullExecutor;
 class MooseApp;
 class Backup;
 class FEProblemBase;
@@ -66,6 +69,22 @@ class MooseApp : public ConsoleStreamInterface,
                  public libMesh::ParallelObject
 {
 public:
+  /**
+   * Stores configuration options relating to the fixed-point solving
+   * capability.  This is used for communicating input-file-based config from
+   * the MultiApp object/syntax to the execution (e.g. executor) system.
+   */
+  struct FixedPointConfig
+  {
+    FixedPointConfig() : sub_relaxation_factor(1.0) {}
+    /// relaxation factor to be used for a MultiApp's subapps.
+    Real sub_relaxation_factor;
+    /// The names of variables to transform for fixed point solve algorithms (e.g. secant, etc.).
+    std::vector<std::string> sub_transformed_vars;
+    /// The names of postprocessors to transform for fixed point solve algorithms (e.g. secant, etc.).
+    std::vector<PostprocessorName> sub_transformed_pps;
+  };
+
   static const RestartableDataMapName MESH_META_DATA;
 
   static InputParameters validParams();
@@ -302,12 +321,65 @@ public:
   /**
    * Retrieve the Executioner for this App
    */
-  Executioner * getExecutioner() const { return _executioner.get(); }
+  Executioner * getExecutioner() const;
+  Executor * getExecutor() const { return _executor.get(); }
+  NullExecutor * getNullExecutor() const { return _null_executor.get(); }
+  bool useExecutor() const { return _use_executor; }
+  FEProblemBase & feProblem() const;
 
   /**
    * Set the Executioner for this App
    */
   void setExecutioner(std::shared_ptr<Executioner> && executioner) { _executioner = executioner; }
+  void setExecutor(std::shared_ptr<Executor> && executor) { _executor = executor; }
+  void
+  addExecutor(const std::string & type, const std::string & name, const InputParameters & params);
+
+  /**
+   * Adds the parameters for an Executor to the list of parameters.  This is done
+   * so that the Executors can be created in _exactly_ the correct order.
+   */
+  void addExecutorParams(const std::string & type,
+                         const std::string & name,
+                         const InputParameters & params);
+
+private:
+  /**
+   * Internal function used to recursively create the executor objects.
+   *
+   * Called by createExecutors
+   *
+   * @param current_executor_name The name of the executor currently needing to be built
+   * @param possible_roots The names of executors that are currently candidates for being the root
+   */
+  void recursivelyCreateExecutors(const std::string & current_executor_name,
+                                  std::list<std::string> & possible_roots,
+                                  std::list<std::string> & current_branch);
+
+public:
+  /**
+   * After adding all of the Executor Params - this function will actually cause all of them to be
+   * built
+   */
+  void createExecutors();
+
+  /**
+   * Get an Executor
+   *
+   * @param name The name of the Executor
+   * @param fail_if_not_found Whether or not to fail if the executor doesn't exist.  If this is
+   * false then this function will return a NullExecutor
+   */
+  Executor & getExecutor(const std::string & name, bool fail_if_not_found = true);
+
+  /**
+   * This info is stored here because we need a "globalish" place to put it in
+   * order to allow communication between a multiapp and solver-specific
+   * internals (i.e. relating to fixed-point inner loops like picard, etc.)
+   * for handling subapp-specific modifications necessary for those solve
+   * processes.
+   */
+  FixedPointConfig & fixedPointConfig() { return _fixed_point_config; }
 
   /**
    * Returns a writable Boolean indicating whether this app will use a Nonlinear or Eigen System.
@@ -830,6 +902,22 @@ public:
    */
   virtual bool errorOnJacobianNonzeroReallocation() const { return false; }
 
+  /**
+   * Registers an interface object for accessing with getInterfaceObjects.
+   *
+   * This should be called within the constructor of the interface in interest.
+   */
+  template <class T>
+  void registerInterfaceObject(T & interface);
+
+  /**
+   * Gets the registered interface objects for a given interface.
+   *
+   * For this to work, the interface must register itself using registerInterfaceObject.
+   */
+  template <class T>
+  const std::vector<T *> & getInterfaceObjects() const;
+
 protected:
   /**
    * Whether or not this MooseApp has cached a Backup to use for restart / recovery
@@ -918,8 +1006,17 @@ protected:
   /// OutputWarehouse object for this App
   OutputWarehouse _output_warehouse;
 
-  /// The PerfGraph object for this application
-  PerfGraph _perf_graph;
+  /// Where the restartable data is held (indexed on tid)
+  RestartableDataMaps _restartable_data;
+
+  /**
+   * Data names that will only be read from the restart file during RECOVERY.
+   * e.g. these names are _excluded_ during restart.
+   */
+  DataNames _recoverable_data_names;
+
+  /// The PerfGraph object for this application (recoverable)
+  PerfGraph & _perf_graph;
 
   /// The RankMap is a useful object for determining how the processes are laid out on the physical hardware
   const RankMap _rank_map;
@@ -938,6 +1035,28 @@ protected:
 
   /// Pointer to the executioner of this run (typically build by actions)
   std::shared_ptr<Executioner> _executioner;
+
+  /// Pointer to the Executor of this run
+  std::shared_ptr<Executor> _executor;
+
+  /// Pointers to all of the Executors for this run
+  std::map<std::string, std::shared_ptr<Executor>> _executors;
+
+  /// Used in building the Executors
+  /// Maps the name of the Executor block to the <type, params>
+  std::unordered_map<std::string, std::pair<std::string, std::unique_ptr<InputParameters>>>
+      _executor_params;
+
+  /// Multiapp-related fixed point algorithm configuration details
+  /// primarily intended  to be passed to and used by the executioner/executor system.
+  FixedPointConfig _fixed_point_config;
+
+  /// Indicates whether we are operating in the new/experimental executor mode
+  /// instead of using the legacy executioner system.
+  const bool _use_executor;
+
+  /// Used to return an executor that does nothing
+  std::shared_ptr<NullExecutor> _null_executor;
 
   /// Boolean to indicate whether to use a Nonlinear or EigenSystem (inspected by actions)
   bool _use_nonlinear;
@@ -1001,7 +1120,12 @@ protected:
   /// true if we want to just check the input file
   bool _check_input;
 
+  /// The relationship managers that have been added
   std::set<std::shared_ptr<RelationshipManager>> _relationship_managers;
+
+  /// The relationship managers that have been attached (type -> RMs)
+  std::map<Moose::RelationshipManagerType, std::set<const RelationshipManager *>>
+      _attached_relationship_managers;
 
   /// A map from undisplaced relationship managers to their displaced clone (stored as the base
   /// GhostingFunctor). Anytime we clone in attachRelationshipManagers we create a map entry from
@@ -1013,6 +1137,20 @@ protected:
   std::map<std::pair<std::string, std::string>, void *> _lib_handles;
 
 private:
+  ///@{
+  /// Structs that are used in the _interface_registry
+  struct InterfaceRegistryObjectsBase
+  {
+    virtual ~InterfaceRegistryObjectsBase() {}
+  };
+
+  template <class T>
+  struct InterfaceRegistryObjects : public InterfaceRegistryObjectsBase
+  {
+    std::vector<T *> _objects;
+  };
+  ///@}
+
   /** Method for creating the minimum required actions for an application (no input file)
    *
    * Mimics the following input file:
@@ -1044,18 +1182,46 @@ private:
    */
   void createMeshGeneratorOrder();
 
-  /// Where the restartable data is held (indexed on tid)
-  RestartableDataMaps _restartable_data;
+  /**
+   * @return whether we have created any clones for the provided template relationship manager and
+   * mesh yet. This may be false for instance when we are in the initial add relationship manager
+   * stage and haven't attempted attaching any relationship managers to the mesh or dof map yet
+   * (which is when we generate the clones). It's also maybe possible that we've created a clone of
+   * a given \p template_rm but not for the provided mesh so we return false in that case as well
+   */
+  bool hasRMClone(const RelationshipManager & template_rm, const MeshBase & mesh) const;
+
+  /**
+   * Return the relationship manager clone originally created from the provided template
+   * relationship manager and mesh
+   */
+  RelationshipManager & getRMClone(const RelationshipManager & template_rm,
+                                   const MeshBase & mesh) const;
+
+  /**
+   * Take an input relationship manager, clone it, and then initialize it with provided mesh and
+   * optional \p dof_map
+   * @param template_rm The relationship manager template from which we will clone
+   * @param mesh The mesh to use for initialization
+   * @param dof_map An optional parameter that, if provided, will be used to help init the cloned
+   * relationship manager
+   * @return a reference to the cloned and initialized relationship manager
+   */
+  RelationshipManager & createRMFromTemplateAndInit(const RelationshipManager & template_rm,
+                                                    MeshBase & mesh,
+                                                    const DofMap * dof_map = nullptr);
+
+  /**
+   * Creates a recoverable PerfGraph.
+   *
+   * This is a separate method so that it can be used in the constructor (multiple calls
+   * are required to declare it).
+   */
+  PerfGraph & createRecoverablePerfGraph();
 
   /// General storage for custom RestartableData that can be added to from outside applications
   std::unordered_map<RestartableDataMapName, std::pair<RestartableDataMap, std::string>>
       _restartable_meta_data;
-
-  /**
-   * Data names that will only be read from the restart file during RECOVERY.
-   * e.g. these names are _excluded_ during restart.
-   */
-  DataNames _recoverable_data_names;
 
   /// Enumeration for holding the valid types of dynamic registrations allowed
   enum RegistrationType
@@ -1116,6 +1282,15 @@ private:
   /// Memory profiling
   bool _heap_profiling = false;
 
+  /// Map from a template relationship manager to a map in which the key-value pairs represent the \p
+  /// MeshBase object and the clone of the template relationship manager, e.g. the top-level map key
+  std::map<const RelationshipManager *,
+           std::map<const MeshBase *, std::unique_ptr<RelationshipManager>>>
+      _template_to_clones;
+
+  /// Registration for interface objects
+  std::map<std::type_index, std::unique_ptr<InterfaceRegistryObjectsBase>> _interface_registry;
+
   // Allow FEProblemBase to set the recover/restart state, so make it a friend
   friend class FEProblemBase;
   friend class Restartable;
@@ -1134,4 +1309,39 @@ const T &
 MooseApp::getParam(const std::string & name) const
 {
   return InputParameters::getParamHelper(name, _pars, static_cast<T *>(0));
+}
+
+template <class T>
+void
+MooseApp::registerInterfaceObject(T & interface)
+{
+  static_assert(!std::is_base_of<MooseObject, T>::value, "T is not an interface");
+
+  InterfaceRegistryObjects<T> * registry = nullptr;
+  auto it = _interface_registry.find(typeid(T));
+  if (it == _interface_registry.end())
+  {
+    auto new_registry = std::make_unique<InterfaceRegistryObjects<T>>();
+    registry = new_registry.get();
+    _interface_registry.emplace(typeid(T), std::move(new_registry));
+  }
+  else
+    registry = static_cast<InterfaceRegistryObjects<T> *>(it->second.get());
+
+  mooseAssert(std::count(registry->_objects.begin(), registry->_objects.end(), &interface) == 0,
+              "Interface already registered");
+  registry->_objects.push_back(&interface);
+}
+
+template <class T>
+const std::vector<T *> &
+MooseApp::getInterfaceObjects() const
+{
+  static_assert(!std::is_base_of<MooseObject, T>::value, "T is not an interface");
+
+  const auto it = _interface_registry.find(typeid(T));
+  if (it != _interface_registry.end())
+    return static_cast<InterfaceRegistryObjects<T> *>(it->second.get())->_objects;
+  const static std::vector<T *> empty;
+  return empty;
 }

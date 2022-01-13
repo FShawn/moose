@@ -37,14 +37,10 @@
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []
-[]
-
-[Problem]
-  kernel_coverage_check = off
 []
 
 [Executioner]

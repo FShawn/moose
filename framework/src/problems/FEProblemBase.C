@@ -30,6 +30,7 @@
 #include "ActionWarehouse.h"
 #include "Conversion.h"
 #include "Material.h"
+#include "FunctorMaterial.h"
 #include "ConstantIC.h"
 #include "Parser.h"
 #include "ElementH1Error.h"
@@ -360,7 +361,7 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
   _bnd_mat_side_cache.resize(n_threads);
   _interface_mat_side_cache.resize(n_threads);
 
-  _restart_io = libmesh_make_unique<RestartableDataIO>(*this);
+  _restart_io = std::make_unique<RestartableDataIO>(*this);
 
   _eq.parameters.set<FEProblemBase *>("_fe_problem_base") = this;
 
@@ -443,7 +444,7 @@ FEProblemBase::newAssemblyArray(NonlinearSystemBase & nl)
 
   _assembly.resize(n_threads);
   for (unsigned int i = 0; i < n_threads; ++i)
-    _assembly[i] = libmesh_make_unique<Assembly>(nl, i);
+    _assembly[i] = std::make_unique<Assembly>(nl, i);
 }
 
 void
@@ -602,17 +603,30 @@ FEProblemBase::getEvaluableElementRange()
 {
   if (!_evaluable_local_elem_range)
   {
-    _evaluable_local_elem_range =
-        libmesh_make_unique<ConstElemRange>(_mesh.getMesh().evaluable_elements_begin(_nl->dofMap()),
-                                            _mesh.getMesh().evaluable_elements_end(_nl->dofMap()));
+    std::vector<const DofMap *> dof_maps = {&_nl->dofMap(), &_aux->dofMap()};
+    _evaluable_local_elem_range = libmesh_make_unique<ConstElemRange>(
+        _mesh.getMesh().multi_evaluable_elements_begin(dof_maps),
+        _mesh.getMesh().multi_evaluable_elements_end(dof_maps));
   }
   return *_evaluable_local_elem_range;
+}
+
+const ConstElemRange &
+FEProblemBase::getNonlinearEvaluableElementRange()
+{
+  if (!_nl_evaluable_local_elem_range)
+    _nl_evaluable_local_elem_range =
+        libmesh_make_unique<ConstElemRange>(_mesh.getMesh().evaluable_elements_begin(_nl->dofMap()),
+                                            _mesh.getMesh().evaluable_elements_end(_nl->dofMap()));
+  return *_nl_evaluable_local_elem_range;
 }
 
 void
 FEProblemBase::initialSetup()
 {
   TIME_SECTION("initialSetup", 2, "Performing Initial Setup");
+
+  SubProblem::initialSetup();
 
   if (_skip_exception_check)
     mooseWarning("MOOSE may fail to catch an exception when the \"skip_exception_check\" parameter "
@@ -845,7 +859,7 @@ FEProblemBase::initialSetup()
     {
       TIME_SECTION("computingInitialStatefulProps", 3, "Computing Initial Material Values");
 
-      ConstElemRange & elem_range = *_mesh.getActiveLocalElementRange();
+      const ConstElemRange & elem_range = *_mesh.getActiveLocalElementRange();
       ComputeMaterialsObjectThread cmt(*this,
                                        _material_data,
                                        _bnd_material_data,
@@ -1052,7 +1066,7 @@ FEProblemBase::initialSetup()
   {
     TIME_SECTION("computeMaterials", 2, "Computing Initial Material Properties");
 
-    ConstElemRange & elem_range = *_mesh.getActiveLocalElementRange();
+    const ConstElemRange & elem_range = *_mesh.getActiveLocalElementRange();
     ComputeMaterialsObjectThread cmt(*this,
                                      _material_data,
                                      _bnd_material_data,
@@ -1101,12 +1115,14 @@ FEProblemBase::initialSetup()
 void
 FEProblemBase::timestepSetup()
 {
+  SubProblem::timestepSetup();
+
   if (_t_step > 1 && _num_grid_steps)
   {
     MeshRefinement mesh_refinement(_mesh);
     std::unique_ptr<MeshRefinement> displaced_mesh_refinement(nullptr);
     if (_displaced_mesh)
-      displaced_mesh_refinement = libmesh_make_unique<MeshRefinement>(*_displaced_mesh);
+      displaced_mesh_refinement = std::make_unique<MeshRefinement>(*_displaced_mesh);
 
     for (MooseIndex(_num_grid_steps) i = 0; i < _num_grid_steps; ++i)
     {
@@ -2072,8 +2088,16 @@ FEProblemBase::addFunction(const std::string & type,
 
   for (THREAD_ID tid = 0; tid < libMesh::n_threads(); tid++)
   {
-    std::shared_ptr<Function> func = _factory.create<Function>(type, name, parameters, tid);
+    std::shared_ptr<MooseFunctionBase> func =
+        _factory.create<MooseFunctionBase>(type, name, parameters, tid);
     _functions.addObject(func, tid);
+
+    auto * const functor = dynamic_cast<Moose::FunctorBase *>(func.get());
+    if (!functor)
+      mooseError("This should be a functor");
+    addFunctor(name, const_cast<const Moose::FunctorBase *>(functor), tid);
+    if (_displaced_problem)
+      _displaced_problem->addFunctor(name, const_cast<const Moose::FunctorBase *>(functor), tid);
   }
 }
 
@@ -2121,7 +2145,11 @@ FEProblemBase::getFunction(const std::string & name, THREAD_ID tid)
       mooseError("Unable to find function " + name);
   }
 
-  return *(_functions.getActiveObject(name, tid));
+  auto * const ret = dynamic_cast<Function *>(_functions.getActiveObject(name, tid).get());
+  if (!ret)
+    mooseError("No function named ", name, " of appropriate type");
+
+  return *ret;
 }
 
 void
@@ -3125,8 +3153,9 @@ FEProblemBase::addMaterialHelper(std::vector<MaterialWarehouse *> warehouses,
 
     bool discrete = !material->getParam<bool>("compute");
 
-    // If the object is boundary restricted do not create the neighbor and face objects
-    if (material->boundaryRestricted())
+    // If the object is boundary restricted or if it is a functor material we do not create the
+    // neighbor and face objects
+    if (material->boundaryRestricted() || dynamic_cast<FunctorMaterial *>(material.get()))
     {
       _all_materials.addObject(material, tid);
       if (discrete)
@@ -3175,15 +3204,26 @@ FEProblemBase::addMaterialHelper(std::vector<MaterialWarehouse *> warehouses,
         for (auto && warehouse : warehouses)
           warehouse->addObjects(material, neighbor_material, face_material, tid);
 
-      // link parameters of face and neighbor materials
+      // Names of all controllable parameters for this Material object
       const std::string & base = parameters.get<std::string>("_moose_base");
       MooseObjectParameterName name(MooseObjectName(base, material->name()), "*");
-      MooseObjectParameterName face_name(MooseObjectName(base, face_material->name()), "*");
-      MooseObjectParameterName neighbor_name(MooseObjectName(base, neighbor_material->name()), "*");
+      const auto param_names =
+          _app.getInputParameterWarehouse().getControllableParameterNames(name);
 
-      _app.getInputParameterWarehouse().addControllableParameterConnection(name, face_name, false);
-      _app.getInputParameterWarehouse().addControllableParameterConnection(
-          name, neighbor_name, false);
+      // Connect parameters of the primary Material object to those on the face and neighbor objects
+      for (const auto & p_name : param_names)
+      {
+        MooseObjectParameterName primary_name(MooseObjectName(base, material->name()),
+                                              p_name.parameter());
+        MooseObjectParameterName face_name(MooseObjectName(base, face_material->name()),
+                                           p_name.parameter());
+        MooseObjectParameterName neighbor_name(MooseObjectName(base, neighbor_material->name()),
+                                               p_name.parameter());
+        _app.getInputParameterWarehouse().addControllableParameterConnection(
+            primary_name, face_name, false);
+        _app.getInputParameterWarehouse().addControllableParameterConnection(
+            primary_name, neighbor_name, false);
+      }
     }
   }
 }
@@ -3487,7 +3527,7 @@ FEProblemBase::addUserObject(const std::string & user_object_name,
     auto euo = std::dynamic_pointer_cast<ElementUserObject>(user_object);
     auto suo = std::dynamic_pointer_cast<SideUserObject>(user_object);
     auto isuo = std::dynamic_pointer_cast<InternalSideUserObject>(user_object);
-    auto iuo = std::dynamic_pointer_cast<InterfaceUserObject>(user_object);
+    auto iuob = std::dynamic_pointer_cast<InterfaceUserObjectBase>(user_object);
     auto nuo = std::dynamic_pointer_cast<NodalUserObject>(user_object);
     auto guo = std::dynamic_pointer_cast<GeneralUserObject>(user_object);
     auto tguo = std::dynamic_pointer_cast<ThreadedGeneralUserObject>(user_object);
@@ -3500,7 +3540,7 @@ FEProblemBase::addUserObject(const std::string & user_object_name,
       else if (suo)
         // shouldn't we add isuo
         _reinit_displaced_face = true;
-      else if (iuo)
+      else if (iuob)
         _reinit_displaced_neighbor = true;
     }
 
@@ -3694,6 +3734,11 @@ FEProblemBase::setCurrentExecuteOnFlag(const ExecFlagType & flag)
 }
 
 void
+FEProblemBase::executeAllObjects(const ExecFlagType & /*exec_type*/)
+{
+}
+
+void
 FEProblemBase::execute(const ExecFlagType & exec_type)
 {
   // Set the current flag
@@ -3704,6 +3749,9 @@ FEProblemBase::execute(const ExecFlagType & exec_type)
     if (_displaced_problem)
       _displaced_problem->setCurrentlyComputingJacobian(true);
   }
+
+  if (exec_type != EXEC_INITIAL)
+    executeControls(exec_type);
 
   // Samplers; EXEC_INITIAL is not called because the Sampler::init() method that is called after
   // construction makes the first Sampler::execute() call. This ensures that the random number
@@ -3721,9 +3769,6 @@ FEProblemBase::execute(const ExecFlagType & exec_type)
 
   // Post-aux UserObjects
   computeUserObjects(exec_type, Moose::POST_AUX);
-
-  if (exec_type != EXEC_INITIAL)
-    executeControls(exec_type);
 
   // Return the current flag to None
   setCurrentExecuteOnFlag(EXEC_NONE);
@@ -4767,8 +4812,12 @@ FEProblemBase::bumpAllQRuleOrder(Order order, SubdomainID block)
 }
 
 void
-FEProblemBase::createQRules(
-    QuadratureType type, Order order, Order volume_order, Order face_order, SubdomainID block)
+FEProblemBase::createQRules(QuadratureType type,
+                            Order order,
+                            Order volume_order,
+                            Order face_order,
+                            SubdomainID block,
+                            const bool allow_negative_qweights)
 {
   if (order == INVALID_ORDER)
   {
@@ -4785,10 +4834,12 @@ FEProblemBase::createQRules(
     face_order = order;
 
   for (unsigned int tid = 0; tid < libMesh::n_threads(); ++tid)
-    _assembly[tid]->createQRules(type, order, volume_order, face_order, block);
+    _assembly[tid]->createQRules(
+        type, order, volume_order, face_order, block, allow_negative_qweights);
 
   if (_displaced_problem)
-    _displaced_problem->createQRules(type, order, volume_order, face_order, block);
+    _displaced_problem->createQRules(
+        type, order, volume_order, face_order, block, allow_negative_qweights);
 
   updateMaxQps();
 }
@@ -4919,7 +4970,7 @@ FEProblemBase::init()
     switch (_coupling)
     {
       case Moose::COUPLING_DIAG:
-        _cm = libmesh_make_unique<CouplingMatrix>(n_vars);
+        _cm = std::make_unique<CouplingMatrix>(n_vars);
         for (unsigned int i = 0; i < n_vars; i++)
           for (unsigned int j = 0; j < n_vars; j++)
             (*_cm)(i, j) = (i == j ? 1 : 0);
@@ -4927,7 +4978,7 @@ FEProblemBase::init()
 
         // for full jacobian
       case Moose::COUPLING_FULL:
-        _cm = libmesh_make_unique<CouplingMatrix>(n_vars);
+        _cm = std::make_unique<CouplingMatrix>(n_vars);
         for (unsigned int i = 0; i < n_vars; i++)
           for (unsigned int j = 0; j < n_vars; j++)
             (*_cm)(i, j) = 1;
@@ -5200,11 +5251,15 @@ FEProblemBase::outputStep(ExecFlagType type)
 {
   TIME_SECTION("outputStep", 1, "Outputting");
 
+  setCurrentExecuteOnFlag(type);
+
   _nl->update();
   _aux->update();
   if (_displaced_problem)
     _displaced_problem->syncSolutions();
   _app.getOutputWarehouse().outputStep(type);
+
+  setCurrentExecuteOnFlag(EXEC_NONE);
 }
 
 void
@@ -5942,7 +5997,9 @@ FEProblemBase::createMortarInterface(
     const std::pair<BoundaryID, BoundaryID> & primary_secondary_boundary_pair,
     const std::pair<SubdomainID, SubdomainID> & primary_secondary_subdomain_pair,
     bool on_displaced,
-    bool periodic)
+    bool periodic,
+    const bool debug,
+    const bool correct_edge_dropping)
 {
   _has_mortar = true;
 
@@ -5951,13 +6008,17 @@ FEProblemBase::createMortarInterface(
                                               primary_secondary_subdomain_pair,
                                               *_displaced_problem,
                                               on_displaced,
-                                              periodic);
+                                              periodic,
+                                              debug,
+                                              correct_edge_dropping);
   else
     return _mortar_data.createMortarInterface(primary_secondary_boundary_pair,
                                               primary_secondary_subdomain_pair,
                                               *this,
                                               on_displaced,
-                                              periodic);
+                                              periodic,
+                                              debug,
+                                              correct_edge_dropping);
 }
 
 const AutomaticMortarGeneration &
@@ -6230,6 +6291,7 @@ FEProblemBase::meshChangedHelper(bool intermediate_change)
   _mesh.updateActiveSemiLocalNodeRange(_ghosted_elems);
 
   _evaluable_local_elem_range.reset();
+  _nl_evaluable_local_elem_range.reset();
 
   // Just like we reinitialized our geometric search objects, we also need to reinitialize our
   // mortar meshes. Note that this needs to happen after DisplacedProblem::meshChanged because the
@@ -6798,7 +6860,7 @@ void
 FEProblemBase::registerRandomInterface(RandomInterface & random_interface, const std::string & name)
 {
   auto insert_pair = moose_try_emplace(
-      _random_data_objects, name, libmesh_make_unique<RandomData>(*this, random_interface));
+      _random_data_objects, name, std::make_unique<RandomData>(*this, random_interface));
 
   auto random_data_ptr = insert_pair.first->second.get();
   random_interface.setRandomDataPointer(random_data_ptr);
@@ -7155,3 +7217,49 @@ FEProblemBase::resizeMaterialData(const Moose::MaterialDataType data_type,
       break;
   }
 }
+
+void
+FEProblemBase::residualSetup()
+{
+  SubProblem::residualSetup();
+  if (_displaced_problem)
+    _displaced_problem->residualSetup();
+}
+
+void
+FEProblemBase::jacobianSetup()
+{
+  SubProblem::jacobianSetup();
+  if (_displaced_problem)
+    _displaced_problem->jacobianSetup();
+}
+
+template <typename T>
+bool
+FEProblemBase::hasFunction(const std::string & name, THREAD_ID tid) const
+{
+  return _functions.hasActiveObject(name, tid) &&
+         dynamic_cast<FunctionTempl<T> *>(_functions.getActiveObject(name, tid).get());
+}
+
+template <>
+FunctionTempl<Real> &
+FEProblemBase::getFunction<Real>(const std::string & name, THREAD_ID tid)
+{
+  return getFunction(name, tid);
+}
+
+template <typename T>
+FunctionTempl<T> &
+FEProblemBase::getFunction(const std::string & name, THREAD_ID tid)
+{
+  if (!hasFunction<T>(name, tid))
+    mooseError("Unable to find function " + name);
+
+  return static_cast<FunctionTempl<T> &>(*(_functions.getActiveObject(name, tid)));
+}
+
+template bool FEProblemBase::hasFunction<Real>(const std::string & name, THREAD_ID tid) const;
+template bool FEProblemBase::hasFunction<ADReal>(const std::string & name, THREAD_ID tid) const;
+template FunctionTempl<ADReal> & FEProblemBase::getFunction<ADReal>(const std::string & name,
+                                                                    THREAD_ID tid);

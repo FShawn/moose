@@ -364,6 +364,13 @@ protected:
                                                        unsigned int comp = 0) const;
 
   /**
+   * Returns the values for all of a coupled array variable's components
+   * @param var_name Name of coupled array variable
+   * @return Vector of ArrayVariableValue pointers for each component of \p var_name
+   */
+  std::vector<const ArrayVariableValue *> coupledArrayValues(const std::string & var_name) const;
+
+  /**
    * Returns a *writable* reference to a coupled variable.  Note: you
    * should not have to use this very often (use coupledValue()
    * instead) but there are situations, such as writing to multiple
@@ -1431,6 +1438,9 @@ private:
   template <typename T>
   const T & getDefaultNodalValue(const std::string & var_name, unsigned int comp = 0) const;
 
+  template <typename T>
+  const Moose::Functor<T> & getDefaultFunctor(const std::string & var_name) const;
+
   /// Maximum qps for any element in this system
   unsigned int _coupleable_max_qps;
 
@@ -1447,7 +1457,6 @@ private:
   /// Whether the MooseObject is a finite volume object
   const bool _is_fv;
 
-private:
   const MooseObject * const _obj;
 };
 

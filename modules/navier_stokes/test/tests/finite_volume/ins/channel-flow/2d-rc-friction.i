@@ -3,10 +3,6 @@ rho=1.1
 advected_interp_method='average'
 velocity_interp_method='rc'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   [gen]
     type = GeneratedMeshGenerator
@@ -78,12 +74,12 @@ velocity_interp_method='rc'
     pressure = pressure
   []
   [u_friction_linear]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = u
     linear_coef_name = friction_coefficient
   []
   [u_friction_quad]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = u
     quadratic_coef_name = friction_coefficient
   []
@@ -113,12 +109,12 @@ velocity_interp_method='rc'
     pressure = pressure
   []
   [v_friction_linear]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = v
     linear_coef_name = friction_coefficient
   []
   [v_friction_quad]
-    type = NSFVMomentumFriction
+    type = INSFVMomentumFriction
     variable = v
     quadratic_coef_name = friction_coefficient
   []
@@ -166,7 +162,7 @@ velocity_interp_method='rc'
     rho = ${rho}
   []
   [friction_coefficient]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'friction_coefficient'
     prop_values = '25'
   []

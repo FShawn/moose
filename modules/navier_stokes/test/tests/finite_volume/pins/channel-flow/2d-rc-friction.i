@@ -16,10 +16,6 @@ velocity_interp_method='rc'
   []
 []
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Variables]
   inactive = 'lambda'
   [u]
@@ -92,7 +88,7 @@ velocity_interp_method='rc'
     porosity = porosity
   []
   [u_friction]
-    type = PNSFVMomentumFriction
+    type = PINSFVMomentumFriction
     variable = u
     momentum_component = 'x'
     porosity = porosity
@@ -129,7 +125,7 @@ velocity_interp_method='rc'
     porosity = porosity
   []
   [v_friction]
-    type = PNSFVMomentumFriction
+    type = PINSFVMomentumFriction
     variable = v
     momentum_component = 'y'
     porosity = porosity
@@ -147,6 +143,7 @@ velocity_interp_method='rc'
 []
 
 [FVBCs]
+  inactive = 'free-slip-u free-slip-v'
   [inlet-u]
     type = INSFVInletVelocityBC
     boundary = 'left'
@@ -171,6 +168,16 @@ velocity_interp_method='rc'
     boundary = 'top'
     variable = v
     function = 0
+  []
+  [free-slip-u]
+    type = INSFVNaturalFreeSlipBC
+    boundary = 'top'
+    variable = u
+  []
+  [free-slip-v]
+    type = INSFVNaturalFreeSlipBC
+    boundary = 'top'
+    variable = v
   []
   [symmetry-u]
     type = PINSFVSymmetryVelocityBC
@@ -215,7 +222,7 @@ velocity_interp_method='rc'
     rho = ${rho}
   []
   [darcy]
-    type = ADGenericConstantVectorMaterial
+    type = ADGenericVectorFunctorMaterial
     prop_names = 'Darcy_coefficient Forchheimer_coefficient'
     prop_values = '0.1 0.1 0.1 0.1 0.1 0.1'
   []

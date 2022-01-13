@@ -51,6 +51,14 @@ public:
   virtual ~Reporter() = default;
   virtual void store(nlohmann::json & json) const;
 
+  /**
+   * @returns Whether or not this Reporter should store its value at this specific time.
+   *
+   * Basic Reporters (those that are not GeneralReporters) will store at all times
+   * when requested.
+   */
+  virtual bool shouldStore() const { return true; }
+
 protected:
   ///@{
   /**
@@ -243,7 +251,7 @@ template <typename T, typename... Args>
 T &
 Reporter::declareUnusedValue(Args &&... args)
 {
-  _unused_values.emplace_back(libmesh_make_unique<UnusedWrapper<T>>(std::forward(args)...));
+  _unused_values.emplace_back(std::make_unique<UnusedWrapper<T>>(std::forward(args)...));
   UnusedWrapper<T> * wrapper = dynamic_cast<UnusedWrapper<T> *>(_unused_values.back().get());
   return wrapper->value;
 }

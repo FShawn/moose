@@ -5,10 +5,6 @@ cp=1
 advected_interp_method='average'
 velocity_interp_method='rc'
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Mesh]
   [gen]
     type = GeneratedMeshGenerator
@@ -174,8 +170,13 @@ velocity_interp_method='rc'
 [Materials]
   [const]
     type = ADGenericConstantMaterial
-    prop_names = 'cp alpha'
-    prop_values = '${cp} 1'
+    prop_names = 'alpha'
+    prop_values = '1'
+  []
+  [const_functor]
+    type = ADGenericFunctorMaterial
+    prop_names = 'cp'
+    prop_values = '${cp}'
   []
   [ins_fv]
     type = INSFVMaterial
@@ -184,6 +185,13 @@ velocity_interp_method='rc'
     pressure = 'pressure'
     rho = ${rho}
     temperature = 'temperature'
+  []
+[]
+
+[Postprocessors]
+  [temp]
+    type = ElementAverageValue
+    variable = temperature
   []
 []
 

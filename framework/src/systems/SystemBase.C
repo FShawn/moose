@@ -823,6 +823,13 @@ SystemBase::addVariable(const std::string & var_type,
     // The number returned by libMesh is the _last_ variable number... we want to hold onto the
     // _first_
     var_num = system().add_variables(var_names, fe_type, &blocks) - (components - 1);
+
+    // Set as array variable
+    if (parameters.isParamSetByUser("array") && !parameters.get<bool>("array"))
+      mooseError("Variable '",
+                 name,
+                 "' is an array variable ('components' > 1) but 'array' is set to false.");
+    parameters.set<bool>("array") = true;
   }
   else
     var_num = system().add_variable(name, fe_type, &blocks);
@@ -845,6 +852,11 @@ SystemBase::addVariable(const std::string & var_type,
         _numbered_vars[tid].resize(required_size);
       for (MooseIndex(components) component = 0; component < components; ++component)
         _numbered_vars[tid][var_num + component] = fe_var;
+
+      auto * const functor = dynamic_cast<Moose::FunctorBase *>(fe_var);
+      if (!functor)
+        mooseError("This should be a functor");
+      _subproblem.addFunctor(name, const_cast<const Moose::FunctorBase *>(functor), tid);
     }
 
     if (var->blockRestricted())

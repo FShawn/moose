@@ -11,7 +11,6 @@
 
 #include "MooseError.h"
 #include "DataIO.h"
-#include "libmesh/auto_ptr.h"
 
 // For computing legendre quadrature
 #include "libmesh/dense_matrix_impl.h"
@@ -26,6 +25,7 @@
 #endif
 
 #include <cmath>
+#include <memory>
 
 namespace PolynomialQuadrature
 {
@@ -35,13 +35,13 @@ makePolynomial(const Distribution * dist)
 {
   const Uniform * u_dist = dynamic_cast<const Uniform *>(dist);
   if (u_dist)
-    return libmesh_make_unique<const Legendre>(dist->getParam<Real>("lower_bound"),
-                                               dist->getParam<Real>("upper_bound"));
+    return std::make_unique<const Legendre>(dist->getParam<Real>("lower_bound"),
+                                            dist->getParam<Real>("upper_bound"));
 
   const Normal * n_dist = dynamic_cast<const Normal *>(dist);
   if (n_dist)
-    return libmesh_make_unique<const Hermite>(dist->getParam<Real>("mean"),
-                                              dist->getParam<Real>("standard_deviation"));
+    return std::make_unique<const Hermite>(dist->getParam<Real>("mean"),
+                                           dist->getParam<Real>("standard_deviation"));
 
   ::mooseError("Polynomials for '", dist->type(), "' distributions have not been implemented.");
   return nullptr;
@@ -49,6 +49,13 @@ makePolynomial(const Distribution * dist)
 
 void
 Polynomial::store(std::ostream & /*stream*/, void * /*context*/) const
+{
+  // Cannot be pure virtual because for dataLoad operations the base class must be constructed
+  ::mooseError("Polynomial child class must override this method.");
+}
+
+void
+Polynomial::store(nlohmann::json & /*json*/) const
 {
   // Cannot be pure virtual because for dataLoad operations the base class must be constructed
   ::mooseError("Polynomial child class must override this method.");
@@ -119,6 +126,14 @@ Legendre::store(std::ostream & stream, void * context) const
   dataStore(stream, type, context);
   dataStore(stream, _lower_bound, context);
   dataStore(stream, _upper_bound, context);
+}
+
+void
+Legendre::store(nlohmann::json & json) const
+{
+  json["type"] = "Legendre";
+  json["lower_bound"] = _lower_bound;
+  json["upper_bound"] = _upper_bound;
 }
 
 Real
@@ -237,6 +252,14 @@ Hermite::store(std::ostream & stream, void * context) const
   dataStore(stream, type, context);
   dataStore(stream, _mu, context);
   dataStore(stream, _sig, context);
+}
+
+void
+Hermite::store(nlohmann::json & json) const
+{
+  json["type"] = "Hermite";
+  json["mu"] = _mu;
+  json["sig"] = _sig;
 }
 
 Real
@@ -419,7 +442,7 @@ TensorGrid::TensorGrid(const std::vector<unsigned int> & npoints,
   for (unsigned int d = 0; d < poly.size(); ++d)
     poly[d]->gaussQuadrature(npoints[d] - 1, qpoints_1D[d], qweights_1D[d]);
 
-  _quad = libmesh_make_unique<const StochasticTools::WeightedCartesianProduct<Real, Real>>(
+  _quad = std::make_unique<const StochasticTools::WeightedCartesianProduct<Real, Real>>(
       qpoints_1D, qweights_1D);
 }
 
@@ -455,9 +478,8 @@ SmolyakGrid::SmolyakGrid(const unsigned int max_order,
       for (unsigned int d = 0; d < poly.size(); ++d)
         poly[d]->gaussQuadrature(dorder[d], qpoints_1D[d], qweights_1D[d]);
 
-      _quad.push_back(
-          libmesh_make_unique<const StochasticTools::WeightedCartesianProduct<Real, Real>>(
-              qpoints_1D, qweights_1D));
+      _quad.push_back(std::make_unique<const StochasticTools::WeightedCartesianProduct<Real, Real>>(
+          qpoints_1D, qweights_1D));
       _npoints.push_back(_npoints.back() + _quad.back()->numRows());
     }
   }
@@ -564,14 +586,14 @@ dataLoad(std::istream & stream,
     Real lower_bound, upper_bound;
     dataLoad(stream, lower_bound, context);
     dataLoad(stream, upper_bound, context);
-    ptr = libmesh_make_unique<const PolynomialQuadrature::Legendre>(lower_bound, upper_bound);
+    ptr = std::make_unique<const PolynomialQuadrature::Legendre>(lower_bound, upper_bound);
   }
   else if (poly_type == "Hermite")
   {
     Real mean, stddev;
     dataLoad(stream, mean, context);
     dataLoad(stream, stddev, context);
-    ptr = libmesh_make_unique<const PolynomialQuadrature::Hermite>(mean, stddev);
+    ptr = std::make_unique<const PolynomialQuadrature::Hermite>(mean, stddev);
   }
   else
     ::mooseError("Unknown Polynomaial type: ", poly_type);

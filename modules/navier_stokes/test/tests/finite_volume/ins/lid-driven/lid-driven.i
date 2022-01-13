@@ -5,7 +5,6 @@ rho=1
   vel = 'velocity'
   velocity_interp_method = 'rc'
   advected_interp_method = 'average'
-  two_term_boundary_expansion = true
 []
 
 [Mesh]
@@ -61,7 +60,7 @@ rho=1
     pressure = pressure
     u = u
     v = v
-    mu = ${mu}
+    mu = 'mu'
     rho = ${rho}
   []
   [mean_zero_pressure]
@@ -77,7 +76,7 @@ rho=1
     pressure = pressure
     u = u
     v = v
-    mu = ${mu}
+    mu = 'mu'
     rho = ${rho}
   []
 
@@ -101,7 +100,7 @@ rho=1
     pressure = pressure
     u = u
     v = v
-    mu = ${mu}
+    mu = 'mu'
     rho = ${rho}
   []
 
@@ -149,6 +148,11 @@ rho=1
     v = 'v'
     pressure = 'pressure'
     rho = ${rho}
+  []
+  [mu]
+    type = ADGenericFunctorMaterial
+    prop_names = 'mu'
+    prop_values = '${mu}'
   []
 []
 

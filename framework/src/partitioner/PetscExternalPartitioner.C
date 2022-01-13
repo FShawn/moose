@@ -67,7 +67,7 @@ PetscExternalPartitioner::PetscExternalPartitioner(const InputParameters & param
 std::unique_ptr<Partitioner>
 PetscExternalPartitioner::clone() const
 {
-  return libmesh_make_unique<PetscExternalPartitioner>(_pars);
+  return std::make_unique<PetscExternalPartitioner>(_pars);
 }
 
 void
@@ -101,6 +101,8 @@ PetscExternalPartitioner::partition(MeshBase & mesh, const unsigned int n_parts)
 void
 PetscExternalPartitioner::_do_partition(MeshBase & mesh, const unsigned int n_parts)
 {
+  initialize(mesh);
+
   dof_id_type num_edges, num_local_elems, local_elem_id, nj, side;
   std::vector<dof_id_type> side_weights;
   std::vector<dof_id_type> elem_weights;

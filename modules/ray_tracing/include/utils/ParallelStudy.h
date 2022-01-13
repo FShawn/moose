@@ -391,11 +391,11 @@ ParallelStudy<WorkType, ParallelDataType>::ParallelStudy(
     _clicks_per_root_communication(params.get<unsigned int>("clicks_per_root_communication")),
     _clicks_per_receive(params.get<unsigned int>("clicks_per_receive")),
 
-    _parallel_data_buffer_tag(Parallel::MessageTag(100)),
+    _parallel_data_buffer_tag(comm.get_unique_tag()),
     _parallel_data_pools(libMesh::n_threads()),
     _temp_threaded_work(libMesh::n_threads()),
     _work_buffer(createWorkBuffer()),
-    _receive_buffer(libmesh_make_unique<
+    _receive_buffer(std::make_unique<
                     ReceiveBuffer<ParallelDataType, ParallelStudy<WorkType, ParallelDataType>>>(
         comm, this, _method, _clicks_per_receive, _parallel_data_buffer_tag)),
 
@@ -422,9 +422,9 @@ ParallelStudy<WorkType, ParallelDataType>::createWorkBuffer()
 
   const auto buffer_type = _params.get<MooseEnum>("work_buffer_type");
   if (buffer_type == "lifo")
-    buffer = libmesh_make_unique<MooseUtils::LIFOBuffer<WorkType>>();
+    buffer = std::make_unique<MooseUtils::LIFOBuffer<WorkType>>();
   else if (buffer_type == "circular")
-    buffer = libmesh_make_unique<MooseUtils::CircularBuffer<WorkType>>();
+    buffer = std::make_unique<MooseUtils::CircularBuffer<WorkType>>();
   else
     mooseError("Unknown work buffer type");
 
@@ -588,7 +588,7 @@ ParallelStudy<WorkType, ParallelDataType>::moveParallelDataToBuffer(
   if (find_pair == _send_buffers.end())
     _send_buffers
         .emplace(dest_pid,
-                 libmesh_make_unique<
+                 std::make_unique<
                      SendBuffer<ParallelDataType, ParallelStudy<WorkType, ParallelDataType>>>(
                      comm(),
                      this,
@@ -819,7 +819,7 @@ ParallelStudy<WorkType, ParallelDataType>::harmExecute()
   // Work completed by each processor
   std::vector<unsigned long long int> work_completed_per_proc(comm().size(), 0);
   // Tag for sending work finished
-  Parallel::MessageTag work_completed_requests_tag = Parallel::MessageTag(21000);
+  const auto work_completed_requests_tag = comm().get_unique_tag();
 
   // Get the amount of work that was started in the whole domain
   comm().sum(_local_work_started, _total_work_started, work_started_request);

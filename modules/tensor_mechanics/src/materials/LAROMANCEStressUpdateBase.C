@@ -10,6 +10,7 @@
 #include "LAROMANCEStressUpdateBase.h"
 #include "Function.h"
 #include "MathUtils.h"
+#include "Units.h"
 
 template <bool is_ad>
 InputParameters
@@ -94,6 +95,9 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::validParams()
       "old_creep_strain_forcing_function",
       "Advanced");
 
+  params.addParam<std::string>("stress_unit", "Pa", "unit of stress");
+  params.addParamNamesToGroup("stress_unit", "Advanced");
+
   return params;
 }
 
@@ -152,7 +156,14 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::LAROMANCEStressUpdateBaseTempl(
     _extrapolation(this->template declareProperty<Real>("ROM_extrapolation")),
 
     _derivative(0.0),
-    _old_input_values(3)
+    _old_input_values(3),
+    _wall_dislocations_step(this->template declareGenericProperty<Real, is_ad>(
+        this->_base_name + "wall_dislocations_step")),
+    _cell_dislocations_step(this->template declareGenericProperty<Real, is_ad>(
+        this->_base_name + "cell_dislocations_step")),
+    _plastic_strain_increment(),
+    _number_of_substeps(
+        this->template declareProperty<Real>(this->_base_name + "number_of_substeps"))
 {
   this->_check_range = true;
 
@@ -169,6 +180,19 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::LAROMANCEStressUpdateBaseTempl(
   if (_environmental)
     _window_failure[_environmental_input_index] =
         parameters.get<MooseEnum>("environment_input_window_failure").getEnum<WindowFailure>();
+
+  setupUnitConversionFactors(parameters);
+}
+
+template <bool is_ad>
+void
+LAROMANCEStressUpdateBaseTempl<is_ad>::setupUnitConversionFactors(
+    const InputParameters & parameters)
+{
+  // Stress unit conversion factor
+  const MooseUnits stress_unit_to("MPa");
+  const MooseUnits stress_unit_from(parameters.get<std::string>("stress_unit"));
+  _stress_ucf = stress_unit_to.convert(1, stress_unit_from);
 }
 
 template <bool is_ad>
@@ -334,23 +358,52 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::maximumPermissibleValue(
 
 template <bool is_ad>
 void
+LAROMANCEStressUpdateBaseTempl<is_ad>::resetIncrementalMaterialProperties()
+{
+  _cell_dislocation_increment = 0.0;
+  _wall_dislocation_increment = 0.0;
+
+  _plastic_strain_increment.zero();
+
+  _wall_dislocations_step[_qp] = 0.0;
+  _cell_dislocations_step[_qp] = 0.0;
+}
+
+template <bool is_ad>
+void
+LAROMANCEStressUpdateBaseTempl<is_ad>::storeIncrementalMaterialProperties(
+    const unsigned int total_number_of_substeps)
+{
+  _wall_dislocations_step[_qp] += _wall_dislocation_increment;
+  _cell_dislocations_step[_qp] += _cell_dislocation_increment;
+  _number_of_substeps[_qp] = total_number_of_substeps;
+}
+
+template <bool is_ad>
+void
 LAROMANCEStressUpdateBaseTempl<is_ad>::computeStressInitialize(
     const GenericReal<is_ad> & effective_trial_stress,
     const GenericRankFourTensor<is_ad> & elasticity_tensor)
 {
   RadialReturnCreepStressUpdateBaseTempl<is_ad>::computeStressInitialize(effective_trial_stress,
                                                                          elasticity_tensor);
+  // Previous substep creep strain
+  RankTwoTensor creep_strain_substep = this->_creep_strain_old[_qp] + _plastic_strain_increment;
 
   // Prepare old values
   _old_input_values[_cell_output_index] =
-      _cell_function ? _cell_function->value(_t, _q_point[_qp]) : _cell_dislocations_old[_qp];
+      _cell_function
+          ? _cell_function->value(_t, _q_point[_qp])
+          : (_cell_dislocations_old[_qp] + MetaPhysicL::raw_value(_cell_dislocations_step[_qp]));
   _old_input_values[_wall_output_index] =
-      _wall_function ? _wall_function->value(_t, _q_point[_qp]) : _wall_dislocations_old[_qp];
+      _wall_function
+          ? _wall_function->value(_t, _q_point[_qp])
+          : (_wall_dislocations_old[_qp] + MetaPhysicL::raw_value(_wall_dislocations_step[_qp]));
   _old_input_values[_strain_output_index] =
       _creep_strain_old_forcing_function
           ? _creep_strain_old_forcing_function->value(_t, _q_point[_qp])
-          : std::sqrt(this->_creep_strain_old[_qp].doubleContraction(this->_creep_strain_old[_qp]) /
-                      1.5);
+          : MetaPhysicL::raw_value(
+                std::sqrt((creep_strain_substep).doubleContraction(creep_strain_substep) / 1.5));
 
   // Prepare input
   _input_values[_cell_input_index] = _old_input_values[_cell_output_index];
@@ -472,7 +525,7 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::checkInputWindow(const GenericReal<is_ad>
     switch (behavior)
     {
       case WindowFailure::WARN:
-        mooseWarning(msg.str());
+        mooseDoOnce(mooseWarning(msg.str()));
         break;
       case WindowFailure::EXCEPTION:
         mooseException(msg.str());
@@ -492,14 +545,14 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::computeResidual(
     const GenericReal<is_ad> & effective_trial_stress, const GenericReal<is_ad> & scalar)
 {
   // Update new stress
-  auto trial_stress_mpa = effective_trial_stress * 1.0e-6;
+  auto trial_stress_mpa = effective_trial_stress * _stress_ucf;
   GenericReal<is_ad> dtrial_stress_dscalar = 0.0;
 
   // Update stress if strain is being applied, i.e. non-testing simulation
   if (this->_apply_strain)
   {
-    trial_stress_mpa -= this->_three_shear_modulus * scalar * 1.0e-6;
-    dtrial_stress_dscalar -= this->_three_shear_modulus * 1.0e-6;
+    trial_stress_mpa -= this->_three_shear_modulus * scalar * _stress_ucf;
+    dtrial_stress_dscalar -= this->_three_shear_modulus * _stress_ucf;
   }
   _input_values[_stress_input_index] = trial_stress_mpa;
 
@@ -545,7 +598,7 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::computeResidual(
     Moose::err << "  old cell disl: " << _old_input_values[_cell_output_index] << "\n";
     Moose::err << "  old wall disl: " << _old_input_values[_wall_output_index] << "\n";
     Moose::err << "  initial stress (MPa): "
-               << MetaPhysicL::raw_value(effective_trial_stress) * 1.0e-6 << "\n";
+               << MetaPhysicL::raw_value(effective_trial_stress) * _stress_ucf << "\n";
     Moose::err << "  temperature: " << MetaPhysicL::raw_value(_temperature[_qp]) << "\n";
     Moose::err << "  environmental factor: " << MetaPhysicL::raw_value(environmental) << "\n";
     Moose::err << "  calculated scalar strain value: " << MetaPhysicL::raw_value(scalar) << "\n";
@@ -839,8 +892,12 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::computeStressFinalize(
 
   _cell_rate[_qp] = _cell_dislocation_increment / _dt;
   _wall_rate[_qp] = _wall_dislocation_increment / _dt;
+
   _cell_dislocations[_qp] = _old_input_values[_cell_output_index] + _cell_dislocation_increment;
   _wall_dislocations[_qp] = _old_input_values[_wall_output_index] + _wall_dislocation_increment;
+
+  // For (possibly) substepping.
+  _plastic_strain_increment += MetaPhysicL::raw_value(plastic_strain_increment);
 
   // Prevent the ROM from calculating and proceeding with negative dislocations
   if ((_cell_dislocations[_qp] < 0.0 || _wall_dislocations[_qp] < 0.0) && (this->_apply_strain))
@@ -849,6 +906,7 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::computeStressFinalize(
     const Real negative_wall_dislocations = MetaPhysicL::raw_value(_wall_dislocations[_qp]);
     _cell_dislocations[_qp] = _old_input_values[_cell_output_index];
     _wall_dislocations[_qp] = _old_input_values[_wall_output_index];
+
     mooseException("The negative values of the cell dislocation density, ",
                    negative_cell_dislocations,
                    ", and/or wall dislocation density, ",
@@ -861,8 +919,8 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::computeStressFinalize(
     Moose::err << " Finalized ROM output\n";
     Moose::err << "  effective creep strain increment: "
                << std::sqrt(2.0 / 3.0 *
-                            MetaPhysicL::raw_value(plastic_strain_increment.doubleContraction(
-                                plastic_strain_increment)))
+                            MetaPhysicL::raw_value(_plastic_strain_increment.doubleContraction(
+                                _plastic_strain_increment)))
                << "\n";
     Moose::err << "  total effective creep strain: "
                << std::sqrt(2.0 / 3.0 *
@@ -879,7 +937,8 @@ LAROMANCEStressUpdateBaseTempl<is_ad>::computeStressFinalize(
                << std::endl;
   }
 
-  RadialReturnCreepStressUpdateBaseTempl<is_ad>::computeStressFinalize(plastic_strain_increment);
+  RadialReturnCreepStressUpdateBaseTempl<is_ad>::computeStressFinalize(
+      MetaPhysicL::raw_value(_plastic_strain_increment));
 }
 
 template <bool is_ad>

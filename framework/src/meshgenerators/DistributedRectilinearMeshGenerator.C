@@ -1039,7 +1039,7 @@ DistributedRectilinearMeshGenerator::buildCube(UnstructuredMesh & mesh,
 
   auto & boundary_info = mesh.get_boundary_info();
 
-  std::unique_ptr<Elem> canonical_elem = libmesh_make_unique<T>();
+  std::unique_ptr<Elem> canonical_elem = std::make_unique<T>();
 
   // Will get used to find the neighbors of an element
   std::vector<dof_id_type> neighbors(canonical_elem->n_neighbors());
@@ -1074,7 +1074,7 @@ DistributedRectilinearMeshGenerator::buildCube(UnstructuredMesh & mesh,
   num_local_elems = 0;
   for (dof_id_type e_id = local_elems_begin; e_id < local_elems_end; e_id++)
   {
-    dof_id_type i, j, k;
+    dof_id_type i, j, k = 0;
 
     getIndices<T>(nx, ny, e_id, i, j, k);
 

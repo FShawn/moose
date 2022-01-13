@@ -14,7 +14,6 @@
 []
 
 [Problem]
-  kernel_coverage_check = false
   coord_type = 'RZ'
 []
 
@@ -42,7 +41,7 @@
 
 [Materials]
   [diff]
-    type = ADGenericConstantMaterial
+    type = ADGenericFunctorMaterial
     prop_names = 'coeff'
     prop_values = '1'
   []

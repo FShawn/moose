@@ -4,6 +4,7 @@ MOOSE includes a set of community developed physics modules that you can build o
 application.
 
 - [Chemical reactions](modules/chemical_reactions/index.md)
+- [Combined](modules/combined/index.md)
 - [Contact](modules/contact/index.md)
 - [Fluid Properties](modules/fluid_properties/index.md)
 - [Fluid-Structure Interaction](modules/fsi/index.md)
@@ -17,6 +18,7 @@ application.
 - [Phase Field](modules/phase_field/index.md)
 - [Porous Flow](modules/porous_flow/index.md)
 - [Ray Tracing](modules/ray_tracing/index.md)
+- [Reactor](modules/reactor/index.md)
 - [Reconstructed Discontinous Galerkin](modules/rdg/index.md)
 - [Richards](modules/richards/index.md)
 - [Stochastic Tools](modules/stochastic_tools/index.md)

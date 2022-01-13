@@ -34,8 +34,21 @@ public:
 
   LAROMANCEStressUpdateBaseTempl(const InputParameters & parameters);
 
+  virtual void resetIncrementalMaterialProperties() override;
+  virtual void
+  storeIncrementalMaterialProperties(const unsigned int total_number_substeps) override;
+
 protected:
   virtual void initialSetup() override;
+
+  // Setup unit conversion factors. The required units in the ROM are:
+  // Cell dislocation density: m^-2
+  // Wall dislocation density: m^-2
+  // MX phase fracture: nondim.
+  // stress: MPa
+  // strain: nondim.
+  // temperature: K
+  virtual void setupUnitConversionFactors(const InputParameters & parameters);
 
   virtual void initQpStatefulProperties() override;
   virtual void
@@ -514,6 +527,20 @@ protected:
 
   /// Container for tiling orientations
   std::vector<unsigned int> _tiling;
+
+  /// Unit conversion factors required to convert from the specified unit to MPa
+  Real _stress_ucf;
+
+  ///@{Material properties accumulated at substeps
+  GenericMaterialProperty<Real, is_ad> & _wall_dislocations_step;
+  GenericMaterialProperty<Real, is_ad> & _cell_dislocations_step;
+  ///@}
+
+  /// Total plastic strain increment in step (summing substep contributions)
+  RankTwoTensor _plastic_strain_increment;
+
+  /// Material property capturing number of substeps for output purposes (defaults to one if substepping isn't used)
+  MaterialProperty<Real> & _number_of_substeps;
 };
 
 typedef LAROMANCEStressUpdateBaseTempl<false> LAROMANCEStressUpdateBase;

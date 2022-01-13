@@ -98,6 +98,12 @@ public:
   template <typename T>
   std::vector<T> getControllableParameterValues(const MooseObjectParameterName & input) const;
 
+  /**
+   * Return a vector of parameters names matching the supplied name.
+   */
+  std::vector<MooseObjectParameterName>
+  getControllableParameterNames(const MooseObjectParameterName & input) const;
+
 private:
   /// Storage for the InputParameters objects
   /// TODO: Remove multimap
@@ -122,8 +128,9 @@ private:
    * This method is private, because only the factories that are creating objects should be
    * able to call this method.
    */
-  InputParameters &
-  addInputParameters(const std::string & name, InputParameters & parameters, THREAD_ID tid = 0);
+  InputParameters & addInputParameters(const std::string & name,
+                                       const InputParameters & parameters,
+                                       THREAD_ID tid = 0);
 
   /**
    * Allows for the deletion and cleanup of an object while the simulation is running.
@@ -167,8 +174,8 @@ private:
 
   ///@{
   /// The factory is allowed to call addInputParameters and removeInputParameters.
-  friend MooseObjectPtr
-  Factory::create(const std::string &, const std::string &, InputParameters &, THREAD_ID, bool);
+  friend MooseObjectPtr Factory::create(
+      const std::string &, const std::string &, const InputParameters &, THREAD_ID, bool);
   friend void Factory::releaseSharedObjects(const MooseObject &, THREAD_ID);
   ///@}
 

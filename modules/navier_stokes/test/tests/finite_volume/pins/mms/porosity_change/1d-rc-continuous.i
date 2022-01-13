@@ -12,10 +12,6 @@ velocity_interp_method='rc'
   []
 []
 
-[GlobalParams]
-  two_term_boundary_expansion = true
-[]
-
 [Problem]
   error_on_jacobian_nonzero_reallocation = true
 []
@@ -116,7 +112,7 @@ velocity_interp_method='rc'
     mu = ${mu}
     porosity = porosity
 
-    vel = 'velocity'
+    superficial_velocity = 'velocity'
     momentum_component = 'x'
     smooth_porosity = true
   []

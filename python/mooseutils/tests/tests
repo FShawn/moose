@@ -30,6 +30,13 @@
     separate = True
     requirement = "MOOSE python utilities shall include tools for reading vector postprocessor data."
   []
+  [reporters]
+    type = PythonUnitTest
+    input = test_ReporterReader.py
+    separate = True
+    requirement = "MOOSE python utilities shall include tools for reading reporter data."
+    issues = "#17391"
+  []
   [camel]
     type = PythonUnitTest
     input = test_camel_to_space.py
@@ -76,5 +83,12 @@
     input = test_civet_results.py
 
     requirement = "The system shall include a tool for accessing CIVET testing results."
+  []
+  [perfgraph]
+    type = PythonUnitTest
+    input = test_PerfGraphReporterReader.py
+    separate = True
+    requirement = "MOOSE python utilities shall include tools for reading PerfGraphReporter data."
+    issues = "#16256"
   []
 []
